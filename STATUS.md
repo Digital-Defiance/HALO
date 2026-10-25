@@ -1,6 +1,6 @@
 # HALO status
 
-Last updated: 2026-10-25 (session 1, Claude). Current phase: **M0 done (Linux + macOS). M1 baseline run ready to start on the Mac. M2 harness partly built.**
+Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 baseline running on the Mac (pass 1). Periodic tiling detector built and wired into the runner.**
 
 ## Done
 
@@ -11,6 +11,7 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M0 done (Linux + 
 - `halo/runner.py`: parallel runner, one `sat` process per shape, per-shape timeout and memory cap (RSS polling), append-only JSONL, resume, re-run of capped shapes from a JSONL (`--only-status`). Tested on Linux.
 - `halo/shape.py`: parsing, Epoch constraint check (cells, both span readings, connectivity, holes for O and H grids), canonical free form. Hole check agrees exactly with `gen` on 8-ominoes (6/6) and 8-hexes (13/13). Canonical form is invariant under all symmetries plus translations (3,363 random tests).
 - `scripts/parallel_classify.sh`: simpler split-and-run. Superseded by `runner.py`, kept for quick use.
+- `halo/periodic.py`: periodic tiling detector (torus exact cover, proofs verified). Wired into `runner.py` via `--periodic-budget`/`--periodic-quick`/`--timeout-long`. See SPEC §4.
 
 ## Measurements (cloud test box, x86, 2 cores)
 
@@ -21,7 +22,8 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M0 done (Linux + 
 
 ## Running now
 
-Nothing. M1 pass 1 is waiting for the owner to start it.
+- M1 pass 1 (owner's Mac, started 15:02): 83,654 / 141,229 done by 15:30. Partial counts: 37,162 Hc=0, 28,932 Hc=1, 642 Hc=2, 23 Hc=3, 16,502 isohedral, 141 inconclusive, 246 memout, 8 timeout. No Hc=4 yet. The Heesch-4 shape may be among the memouts, since proving the 5th corona impossible is expensive.
+- This run uses the old single-stage runner. Pass 2 (below) uses the new ladder.
 
 ## Next steps (in order)
 
@@ -32,12 +34,13 @@ Nothing. M1 pass 1 is waiting for the owner to start it.
    python3 halo/runner.py results/hex11.txt --out results/hex11.jsonl --maxlevel 5 --timeout 60 --mem-mb 3000 --generator gen-hex11
    ```
    Goal: reproduce Kaplan's single Heesch-4 11-hex (it should appear in the final "hc=4" list). If the run is interrupted, rerun the same command and it resumes.
-2. **Owner: pass 2** for shapes that hit a cap:
+2. **Owner: pass 2** for unsettled shapes. It uses the ladder with the periodic detector: 6 jobs × up to 8 GB.
    ```sh
-   python3 halo/runner.py results/hex11.jsonl --only-status timeout,memout --out results/hex11_pass2.jsonl --jobs 3 --maxlevel 5 --timeout 1800 --mem-mb 18000 --generator gen-hex11-pass2
+   python3 halo/runner.py results/hex11.jsonl --only-status timeout,memout,inconclusive --out results/hex11_pass2.jsonl --jobs 6 --maxlevel 5 --timeout 5 --timeout-long 900 --mem-mb 8000 --periodic-budget 120 --generator gen-hex11-pass2
    ```
+   Expected: almost all become `periodic` (proven tilers). Whatever remains with hc=4 is Kaplan's shape. For future batches, use the ladder from the start, e.g. `--timeout 5 --timeout-long 60 --periodic-budget 60`.
 3. **Agent:** summarize the M1 results here (counts, hc histogram, time, the H=4 shape copied to `shapes/reference/`).
-4. **Agent (M2):** anisohedral filter (k-isohedral tiling detector), staged maxlevel inside the runner, Track C local search seeded from Heesch-3/4 shapes.
+4. **Agent (M2):** Track C local search seeded from Heesch-3/4 shapes. Speed up `periodic.py` (C++ port or SAT) if the detector becomes a bottleneck.
 5. **Owner, optional:** PDFs of Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 (*Math. Intelligencer* 43(3)) into `refs/` for Track A2.
 6. **Agent:** literature check A3: is any polyform with H >= 5 known?
 

@@ -144,6 +144,22 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir):
     return rec
 
 
+PERIODIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "periodic.py")
+
+
+def run_periodic(line, budget, max_t):
+    """Run the periodic tiling detector in its own process (keeps the GIL out of the way)."""
+    cmd = [sys.executable, PERIODIC, "--shape", line, "--json", "--budget", str(budget), "--max-t", str(max_t)]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=budget + 60).stdout
+        info = json.loads(out.strip().splitlines()[-1])
+    except Exception as exc:
+        return {"status": "error", "error": repr(exc)[:200]}
+    if info.get("status") == "tiles":
+        info.pop("placements", None)  # keep records small; rerun periodic.py --shape to get the tiling
+    return info
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input")
@@ -159,6 +175,14 @@ def main():
     ap.add_argument("--generator", default="file", help="label stored with each record")
     ap.add_argument("--only-status", default="",
                     help="with JSONL input: comma-separated statuses to re-run (e.g. timeout,memout)")
+    ap.add_argument("--periodic-budget", type=float, default=0.0,
+                    help="seconds for the periodic tiling detector on shapes heesch-sat could not "
+                         "settle (timeout, memout, inconclusive); 0 = off. Proven tilers get status 'periodic'")
+    ap.add_argument("--periodic-max-t", type=int, default=24, help="max tiles per period to try")
+    ap.add_argument("--periodic-quick", type=float, default=5.0,
+                    help="budget for the quick periodic probe right after the first heesch-sat attempt")
+    ap.add_argument("--timeout-long", type=float, default=0.0,
+                    help="if > --timeout: retry heesch-sat with this timeout when the quick probe finds no tiling")
     args = ap.parse_args()
 
     if not os.access(args.sat, os.X_OK):
@@ -208,8 +232,36 @@ def main():
     best = []
     t0 = time.monotonic()
     with open(args.out, "a") as outfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(run_one, args.sat, ln, args.maxlevel, args.timeout, args.mem_mb, workdir): (key, ln)
-                for key, ln in todo}
+        unsettled = ("timeout", "memout", "inconclusive")
+
+        def periodic_stage(ln, rec, budget):
+            p = run_periodic(ln, budget, args.periodic_max_t)
+            rec["periodic"] = p
+            if p.get("status") == "tiles":
+                rec["heesch_status"] = rec["status"]
+                rec["status"] = "periodic"
+                return True
+            return False
+
+        def work(ln):
+            # Ladder: quick heesch-sat -> quick periodic probe -> long heesch-sat -> long periodic probe.
+            rec = run_one(args.sat, ln, args.maxlevel, args.timeout, args.mem_mb, workdir)
+            grid = ln.split()[0].rstrip("?")
+            if args.periodic_budget <= 0 or grid not in ("O", "H") or rec["status"] not in unsettled:
+                return rec
+            if periodic_stage(ln, rec, min(args.periodic_quick, args.periodic_budget)):
+                return rec
+            if rec["status"] == "timeout" and args.timeout_long > args.timeout:
+                quick = rec
+                rec = run_one(args.sat, ln, args.maxlevel, args.timeout_long, args.mem_mb, workdir)
+                rec["quick"] = {k: quick.get(k) for k in ("status", "seconds", "periodic")}
+                if rec["status"] not in unsettled:
+                    return rec
+            if args.periodic_budget > args.periodic_quick:
+                periodic_stage(ln, rec, args.periodic_budget)
+            return rec
+
+        futs = {pool.submit(work, ln): (key, ln) for key, ln in todo}
         for i, fut in enumerate(as_completed(futs), 1):
             key, ln = futs[fut]
             try:

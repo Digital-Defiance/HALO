@@ -88,7 +88,8 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - **Checker:** heesch-sat `sat`, single-threaded per process. The harness runs one process per core with a work queue. Always pass `-isohedral`. Pass `-maxlevel` explicitly (default is 7).
 - **Data:** one JSONL file per run in `results/`, one line per checked shape: `{canon, grid, cells, span_x, span_y, hc, hh, status, seconds, maxlevel, generator, parent, run_id, ts}`. `canon` is the canonical free form (min over grid symmetries and translations) and is used for dedupe.
 - **Cost profile (measured 2026-10-25, 400 random free 11-hexes, maxlevel 7):** median check 0.05 s, but about 1% of shapes are tilers that heesch-sat cannot classify (not isohedral, presumably anisohedral). Each of those costs 10–60 s and 1–6+ GB even at maxlevel 4–5, which is about half of all compute. Runs therefore use two passes: a fast pass with tight per-shape caps, then a re-run of capped shapes with big caps and few jobs (`runner.py --only-status timeout,memout`).
-- **Anisohedral filter (high value):** a fast k-isohedral tiling detector (k = 2, 3), in the spirit of Joseph Myers' polyform tiling software, would remove the dominant cost and stop such tilers from posing as high-Heesch candidates. Planned for M2.
+- **Periodic tiling detector (`halo/periodic.py`, built 2026-10-25):** a shape tiles periodically iff copies of it exactly cover some torus Z²/L. The detector tries sublattices L of index t·area (t = 1..24), up to grid symmetry, solving exact cover with Algorithm X. Every solution is verified, so a "tiles" result is a proof. On the 11-hex sample it settled all 4 shapes heesch-sat couldn't (three in about 1 s, one needing 8 tiles per period in 23 s). On 8-ominoes: 0/20 false positives, 60/60 isohedral tilers found. Square and hex grids only.
+- **Runner ladder:** quick heesch-sat (`--timeout`, e.g. 5 s) → quick periodic probe (`--periodic-quick`, 5 s) → long heesch-sat (`--timeout-long`) → long periodic probe (`--periodic-budget`). On the 400-hex sample, every shape was settled at the same wall time as the old single-stage runner, which left 1% unsettled.
 - **Checkpointing:** append each result immediately. Runs must be resumable from their JSONL file.
 - **Compute placement:** CPU = SAT checks. GPU = scorer training and relaxations. Neural Engine = scorer inference through ANER.
 - **Native runs:** started by the owner on macOS with a single command. The agent's Linux VM is for development and small tests only.
@@ -121,6 +122,7 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - 2026-10-25: heesch-sat pinned at commit `d12a527` (2026-08-30). Build needs C++20 and linking `isohedral.o` into `sat`; the upstream Makefile is out of date.
 - 2026-10-25: The agent shell on the Mac is a Linux VM. Native Metal/Neural Engine runs are launched by the owner.
 - 2026-10-25: Gaussian-splat-style continuous relaxations are allowed only as an optional generator in Track D.
+- 2026-10-25: Periodic tiling detector via torus exact cover instead of a k-isohedral classifier: simpler, gives proofs, catches any periodic tiling with at most 24 tiles per period.
 - 2026-10-25: Two-pass checking with per-shape time/memory caps. One runaway shape OOM-killed a whole batch on the 7 GB test box; the runner now isolates every shape in its own process.
 
 ## 8. References
