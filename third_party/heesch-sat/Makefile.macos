@@ -1,0 +1,25 @@
+# HALO build of heesch-sat for macOS on Apple Silicon with Homebrew.
+# Prereqs: brew install cryptominisat boost   (cairo + pkg-config only for viz)
+# NOT YET TESTED on macOS; see STATUS.md.
+BREW := $(shell brew --prefix 2>/dev/null || echo /opt/homebrew)
+INCLUDES = -I$(BREW)/include/cryptominisat5 -I$(BREW)/include
+CXX = clang++
+OPT = -O3 -DNDEBUG -mcpu=native
+CXXFLAGS = -std=c++20 -Wall -MMD $(INCLUDES) $(OPT)
+LIBS = -L$(BREW)/lib -Wl,-rpath,$(BREW)/lib -lcryptominisat5
+
+all: sat gen report surrounds
+
+sat: sat.o isohedral.o
+	$(CXX) -o sat sat.o isohedral.o $(LIBS)
+gen: gen.o
+	$(CXX) -o gen gen.o $(LIBS)
+report: report.o
+	$(CXX) -o report report.o $(LIBS)
+surrounds: surrounds.o
+	$(CXX) -o surrounds surrounds.o $(LIBS)
+viz: viz.o
+	$(CXX) -o viz viz.o $(LIBS) $(shell pkg-config --libs cairo)
+viz.o: CXXFLAGS += $(shell pkg-config --cflags cairo)
+
+-include $(wildcard *.d)
