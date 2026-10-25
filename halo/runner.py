@@ -165,6 +165,39 @@ def run_periodic(line, budget, max_t):
     return info
 
 
+UNSETTLED = ("timeout", "memout", "inconclusive")
+
+
+def classify(line, opts, workdir):
+    """Full checking ladder for one shape. `opts` needs: sat, maxlevel, timeout, timeout_long,
+    mem_mb, periodic_budget, periodic_quick, periodic_max_t (e.g. the runner's argparse args).
+    Ladder: quick heesch-sat -> quick periodic probe -> long heesch-sat -> long periodic probe."""
+    def periodic_stage(rec, budget):
+        p = run_periodic(line, budget, opts.periodic_max_t)
+        rec["periodic"] = p
+        if p.get("status") == "tiles":
+            rec["heesch_status"] = rec["status"]
+            rec["status"] = "periodic"
+            return True
+        return False
+
+    rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout, opts.mem_mb, workdir)
+    grid = line.split()[0].rstrip("?")
+    if opts.periodic_budget <= 0 or grid not in ("O", "H") or rec["status"] not in UNSETTLED:
+        return rec
+    if periodic_stage(rec, min(opts.periodic_quick, opts.periodic_budget)):
+        return rec
+    if rec["status"] == "timeout" and opts.timeout_long > opts.timeout:
+        quick = rec
+        rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout_long, opts.mem_mb, workdir)
+        rec["quick"] = {k: quick.get(k) for k in ("status", "seconds", "periodic")}
+        if rec["status"] not in UNSETTLED:
+            return rec
+    if opts.periodic_budget > opts.periodic_quick:
+        periodic_stage(rec, opts.periodic_budget)
+    return rec
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input")
@@ -237,36 +270,7 @@ def main():
     best = []
     t0 = time.monotonic()
     with open(args.out, "a") as outfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        unsettled = ("timeout", "memout", "inconclusive")
-
-        def periodic_stage(ln, rec, budget):
-            p = run_periodic(ln, budget, args.periodic_max_t)
-            rec["periodic"] = p
-            if p.get("status") == "tiles":
-                rec["heesch_status"] = rec["status"]
-                rec["status"] = "periodic"
-                return True
-            return False
-
-        def work(ln):
-            # Ladder: quick heesch-sat -> quick periodic probe -> long heesch-sat -> long periodic probe.
-            rec = run_one(args.sat, ln, args.maxlevel, args.timeout, args.mem_mb, workdir)
-            grid = ln.split()[0].rstrip("?")
-            if args.periodic_budget <= 0 or grid not in ("O", "H") or rec["status"] not in unsettled:
-                return rec
-            if periodic_stage(ln, rec, min(args.periodic_quick, args.periodic_budget)):
-                return rec
-            if rec["status"] == "timeout" and args.timeout_long > args.timeout:
-                quick = rec
-                rec = run_one(args.sat, ln, args.maxlevel, args.timeout_long, args.mem_mb, workdir)
-                rec["quick"] = {k: quick.get(k) for k in ("status", "seconds", "periodic")}
-                if rec["status"] not in unsettled:
-                    return rec
-            if args.periodic_budget > args.periodic_quick:
-                periodic_stage(ln, rec, args.periodic_budget)
-            return rec
-
-        futs = {pool.submit(work, ln): (key, ln) for key, ln in todo}
+        futs = {pool.submit(classify, ln, args, workdir): (key, ln) for key, ln in todo}
         for i, fut in enumerate(as_completed(futs), 1):
             key, ln = futs[fut]
             try:

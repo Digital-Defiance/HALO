@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""HALO Track C: guided local search for polyforms with high Heesch numbers.
+
+Starts from seed shapes (e.g. the Hc=3 shapes from a runner JSONL), repeatedly mutates
+the best ones (add / remove / move a cell, keeping the shape connected, hole-free and
+within the Epoch limits), checks every new shape with the full runner ladder
+(heesch-sat + periodic tiling detector), and keeps an elite archive.
+
+Every checked shape is appended to --log (JSONL, same fields as runner.py plus parent and
+op), so a run can be stopped and resumed: on restart the archive is rebuilt from the log.
+
+Usage (native macOS run, all cores):
+  python3 halo/search.py --seeds results/hex11.jsonl --seed-min-hc 3 --log results/search_hex.jsonl \
+      --max-cells 40 --maxlevel 7 --hours 8
+
+Square and hex grids only (mutation needs grid adjacency).
+"""
+import argparse
+import json
+import math
+import os
+import random
+import sys
+import tempfile
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runner  # noqa: E402
+import shape as shp  # noqa: E402
+
+
+def line_of(grid, cells):
+    return shp.fmt(grid, cells)
+
+
+def mutate(grid, cells, rng, steps):
+    s = set(cells)
+    nb = shp.NEIGHBOURS[grid]
+    ops = []
+    for _ in range(steps):
+        r = rng.random()
+        frontier = list({(x + dx, y + dy) for x, y in s for dx, dy in nb} - s)
+        if r < 0.45 or len(s) <= 3:
+            s.add(rng.choice(frontier))
+            ops.append("add")
+        elif r < 0.7:
+            s.discard(rng.choice(sorted(s)))
+            ops.append("remove")
+        else:
+            c = rng.choice(sorted(s))
+            s.discard(c)
+            frontier = list({(x + dx, y + dy) for x, y in s for dx, dy in nb} - s - {c})
+            if not frontier:
+                s.add(c)
+                continue
+            s.add(rng.choice(frontier))
+            ops.append("move")
+    return sorted(s), "+".join(ops)
+
+
+def fitness(rec):
+    """Sort key: higher is better. Non-tilers by hc, then hh, then checker time at the deciding level."""
+    if rec.get("status") != "nontiler" or rec.get("hc") is None:
+        return (-1, -1, 0.0)
+    return (rec["hc"], rec.get("hh") or rec["hc"], min(rec.get("seconds", 0.0), 600.0))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--seeds", required=True, help="runner JSONL (or text file of shape lines)")
+    ap.add_argument("--seed-min-hc", type=int, default=3)
+    ap.add_argument("--log", required=True)
+    ap.add_argument("--grid", default="", help="restrict to one grid (O or H); default: from seeds")
+    ap.add_argument("--max-cells", type=int, default=40)
+    ap.add_argument("--min-cells", type=int, default=4)
+    ap.add_argument("--elite", type=int, default=64, help="parents are drawn from the top-N archive")
+    ap.add_argument("--explore", type=float, default=0.1, help="chance to pick a random archived parent")
+    ap.add_argument("--hours", type=float, default=1.0)
+    ap.add_argument("--max-evals", type=int, default=0)
+    ap.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
+    ap.add_argument("--seed", type=int, default=0)
+    # checker settings (same meaning as runner.py)
+    ap.add_argument("--sat", default=runner.DEFAULT_SAT)
+    ap.add_argument("--maxlevel", type=int, default=7)
+    ap.add_argument("--timeout", type=float, default=10.0)
+    ap.add_argument("--timeout-long", type=float, default=300.0)
+    ap.add_argument("--mem-mb", type=float, default=3000.0)
+    ap.add_argument("--periodic-budget", type=float, default=30.0)
+    ap.add_argument("--periodic-quick", type=float, default=3.0)
+    ap.add_argument("--periodic-max-t", type=int, default=24)
+    args = ap.parse_args()
+    rng = random.Random(args.seed)
+
+    archive = {}  # canonical line -> record
+    if os.path.exists(args.log):
+        with open(args.log) as fh:
+            for ln in fh:
+                try:
+                    r = json.loads(ln)
+                    archive[r["canon"]] = r
+                except Exception:
+                    pass
+    print(f"resumed {len(archive)} shapes from {args.log}" if archive else "fresh run", flush=True)
+
+    seeds = []
+    with open(args.seeds) as fh:
+        for ln in fh:
+            ln = ln.strip()
+            if not ln:
+                continue
+            if args.seeds.endswith(".jsonl"):
+                r = json.loads(ln)
+                if r.get("status") == "nontiler" and (r.get("hc") or 0) >= args.seed_min_hc:
+                    seeds.append(r)
+            else:
+                seeds.append({"shape": ln, "status": "unknown"})
+    grids = {s["shape"].split()[0].rstrip("?") for s in seeds}
+    grid = args.grid or (grids.pop() if len(grids) == 1 else "")
+    if grid not in ("O", "H"):
+        sys.exit(f"need seeds from one square or hex grid (got {grids}); use --grid")
+    for s in seeds:
+        g, cells = shp.parse(s["shape"])
+        canon = shp.canonical(g, cells)
+        if canon not in archive:
+            rec = dict(s)
+            rec.update({"canon": canon, "shape": canon, "parent": None, "op": "seed"})
+            archive[canon] = rec
+    print(f"{len(seeds)} seeds on grid {grid}; archive {len(archive)}", flush=True)
+
+    workdir = tempfile.mkdtemp(prefix="halo_search_")
+    lock = threading.Lock()
+    deadline = time.monotonic() + args.hours * 3600
+    evals = 0
+    best_seen = max((fitness(r) for r in archive.values()), default=(-1, -1, 0))
+    print(f"best so far: hc={best_seen[0]}", flush=True)
+
+    def pick_parent():
+        live = [r for r in archive.values() if r.get("status") == "nontiler"]
+        if not live:
+            return None
+        if rng.random() < args.explore:
+            return rng.choice(live)
+        live.sort(key=fitness, reverse=True)
+        return rng.choice(live[: args.elite])
+
+    def propose():
+        for _ in range(200):
+            parent = pick_parent()
+            if parent is None:
+                return None
+            g, cells = shp.parse(parent["canon"])
+            steps = 1 + int(rng.random() < 0.3) + int(rng.random() < 0.1)
+            new, op = mutate(g, cells, rng, steps)
+            if not (args.min_cells <= len(new) <= args.max_cells):
+                continue
+            ok, problems, info = shp.check(line_of(g, new))
+            if not ok or any("stricter" in p for p in problems):
+                continue
+            canon = shp.canonical(g, new)
+            with lock:
+                if canon in archive:
+                    continue
+                archive[canon] = {"canon": canon, "status": "pending"}
+            return canon, parent["canon"], op
+        return None
+
+    with open(args.log, "a") as logfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        running = {}
+        t0 = time.monotonic()
+        while True:
+            stop = time.monotonic() > deadline or (args.max_evals and evals >= args.max_evals)
+            while not stop and len(running) < args.jobs:
+                prop = propose()
+                if prop is None:
+                    break
+                canon, parent, op = prop
+                running[pool.submit(runner.classify, canon, args, workdir)] = (canon, parent, op)
+            if not running:
+                break
+            done, _ = wait(list(running), return_when=FIRST_COMPLETED)
+            for fut in done:
+                canon, parent, op = running.pop(fut)
+                try:
+                    rec = fut.result()
+                except Exception as exc:
+                    rec = {"status": "error", "hc": None, "hh": None, "stderr": repr(exc)}
+                record = rec.pop("record", None)
+                row = {"canon": canon, "shape": canon, "grid": grid, "cells": (len(canon.split()) - 1) // 2,
+                       "parent": parent, "op": op, "generator": "search", "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                row.update(rec)
+                if row["status"] == "nontiler" and (row["hc"] or 0) >= 3:
+                    row["witness"] = record
+                with lock:
+                    archive[canon] = row
+                    logfh.write(json.dumps(row) + "\n")
+                    logfh.flush()
+                evals += 1
+                f = fitness(row)
+                if f[0] > best_seen[0]:
+                    best_seen = f
+                    print(f"  NEW BEST hc={row['hc']} hh={row['hh']} cells={row['cells']}: {canon}", flush=True)
+                if evals % 100 == 0:
+                    hist = {}
+                    for r in archive.values():
+                        if r.get("status") == "nontiler":
+                            hist[r["hc"]] = hist.get(r["hc"], 0) + 1
+                    rate = evals / (time.monotonic() - t0)
+                    print(f"  {evals} evals, {rate:.1f}/s, archive {len(archive)}, non-tilers by hc: "
+                          + ", ".join(f"{k}:{v}" for k, v in sorted(hist.items())), flush=True)
+    print(f"done: {evals} evaluations; best hc={best_seen[0]}")
+    top = sorted((r for r in archive.values() if r.get("status") == "nontiler"), key=fitness, reverse=True)[:10]
+    for r in top:
+        print(f"  hc={r['hc']} hh={r.get('hh')} cells={r.get('cells')} {r['canon']}")
+
+
+if __name__ == "__main__":
+    main()

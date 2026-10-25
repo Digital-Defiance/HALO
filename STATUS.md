@@ -25,8 +25,11 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 baseline runni
 
 - **M1 pass 1 finished** (owner's Mac, 15:02–15:46, 44 min wall, 11.2 core-hours, 16 jobs, maxlevel 5, old single-stage runner, peak RSS per check 3.1 GB). All 141,229 free hole-free 11-hexes: **67,644 Hc=0, 47,940 Hc=1, 816 Hc=2, 29 Hc=3**, 24,289 isohedral, 511 unsettled (183 inconclusive, 319 memout, 9 timeout). No Hc=4 among settled shapes. Kaplan reports exactly one Heesch-4 11-hex, presumably among the 511 unsettled. Results: `results/hex11.jsonl`.
 - **M1 pass 2:** waiting for the owner to start it (command below).
-- **Scorer step 1** (agent, cloud). First result: 4 residual blocks, 6 epochs, 71 s on 2 CPU cores, all 29 Hc=3 shapes hidden from training. On held-out shapes: among non-tilers, Hc>=3 vs rest AUC **0.94** (it extrapolates to a level it never saw); Hc>=2 AUC 0.83; tiler vs non-tiler AUC 0.75 (the weak part). The top 1% of picks holds 4/29 Hc=3, about 14× random. An 8-block, 12-epoch run is in progress. Code: `halo/scorer.py` (training; needs torch) and `halo/aner_scorer.py` (ANER inference plus NumPy reference; the NumPy forward matches torch to 5e-7). Weights go in `results/models/*.npz` (git-ignored).
-- **Track B prototype** (agent, cloud): `halo/gen_marked.py` scales base polyominoes 3× and puts a 1-cell bump or nick (or nothing) on each base edge. Bases of 1–2 cells give 163 shapes, best Hc=2. 3-cell bases (2,897 shapes) are being checked.
+- **Scorer step 1: done, positive.** Deep residual MLP built only from ANER ops, all 29 Hc=3 shapes hidden from training. 8 blocks (18 linear layers, width 512), 12 epochs on 2 CPU cores: among held-out non-tilers, Hc>=3 vs rest AUC **0.94**. Using score = hc_hat × (1 − p_tile) over all held-out shapes, the **top 1% captures 12/29 Hc=3 shapes (41× random)** and the top 5% captures 17/29; median Hc=3 percentile is about 4%. Tiler-vs-non-tiler AUC is 0.76, still the weak head. Weights: `results/models/scorer_hex11_b8.npz` (git-ignored, 17 MB). Caveat: trained only on 11-cell hexes in a 16×16 window; larger shapes are out of distribution until retrained on search logs.
+- **ANER benchmark: waiting for the owner** (command in Next steps). It compares the Neural Engine with NumPy (Accelerate) on the trained scorer: throughput and agreement.
+- **Track B prototype** (agent, cloud): `halo/gen_marked.py` scales base polyominoes 3× and puts a 1-cell bump or nick (or nothing) on each base edge. 1–2-cell bases: 163 shapes, best Hc=2. 3-cell bases: 2,897 shapes → 2,389 Hc=0, 127 Hc=1, 1 Hc=2, 355 isohedral, 25 unsettled (being re-checked with the C++ detector). Random markings mostly give Hc=0, because single-cell nicks are rarely fillable. Markings need searching (Track C on markings), not random enumeration.
+- **Track C search loop built:** `halo/search.py`. Mutation-based local search (add/remove/move cells; connected, hole-free, within limits; dedupe by canonical form), the full runner ladder per shape, an elite archive, resumable JSONL log. Smoke test from the 29 Hc=3 11-hexes (200 checks, 2 cores): offspring mostly Hc 0–1 and no new Hc>=3. Real runs need the Mac's cores and the scorer as a prefilter (next).
+- `halo/runner.py` refactored: the ladder is now `runner.classify()`, shared with search.py. 8-ominoes fully settled in 18.5 s (was 57 s with one shape unsettled).
 
 ## Next steps (in order)
 
@@ -43,10 +46,16 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 baseline runni
    python3 halo/runner.py results/hex11.jsonl --only-status timeout,memout,inconclusive --out results/hex11_pass2.jsonl --jobs 6 --maxlevel 5 --timeout 5 --timeout-long 900 --mem-mb 8000 --periodic-budget 120 --generator gen-hex11-pass2
    ```
    Expected: almost all become `periodic` (proven tilers). Whatever remains with hc=4 is Kaplan's shape. For future batches, use the ladder from the start, e.g. `--timeout 5 --timeout-long 60 --periodic-budget 60`.
-3. **Agent:** summarize the M1 results here (counts, hc histogram, time, the H=4 shape copied to `shapes/reference/`).
-4. **Agent (M2):** Track C local search seeded from Heesch-3/4 shapes. Speed up `periodic.py` (C++ port or SAT) if the detector becomes a bottleneck.
-5. **Owner, optional:** PDFs of Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 (*Math. Intelligencer* 43(3)) into `refs/` for Track A2.
-6. **Agent:** finish literature check A3 for 2024–2026 (as of Kaplan 2023, no polyform with H >= 5 is known). Then start Track B with the cheap route: scale small marked polyforms (bumps/nicks as sub-cells) and run heesch-sat on them.
+3. **Owner: first ANER benchmark** (needs numpy in the Python you run it with; no torch needed):
+   ```sh
+   cd /Volumes/Code/HALO
+   PYTHONPATH=/Volumes/Code/ANER/python python3 halo/aner_scorer.py results/models/scorer_hex11_b8.npz results/hex11.jsonl
+   ```
+   Reports: Neural Engine used yes/no, compile time, shapes/s for ANER vs NumPy, max disagreement.
+4. **Agent:** summarize M1 pass 2 (the Heesch-4 shape → `shapes/reference/`). Add the scorer prefilter to `search.py` (generate many mutants, score them, check only the best), then retrain the scorer on search logs with a bigger window (22×22 = 484 channels) for larger shapes.
+5. **Agent:** Track B as a search over markings (bump/nick per edge) instead of random enumeration, on 4–6-cell bases.
+6. **Owner, optional:** PDFs of Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 (*Math. Intelligencer* 43(3)) into `refs/` for Track A2.
+7. **Agent:** finish literature check A3 for 2024–2026 (as of Kaplan 2023, no polyform with H >= 5 is known). Then start Track B with the cheap route: scale small marked polyforms (bumps/nicks as sub-cells) and run heesch-sat on them.
 
 ## Git workflow
 
