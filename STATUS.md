@@ -22,8 +22,10 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 baseline runni
 
 ## Running now
 
-- M1 pass 1 (owner's Mac, started 15:02): 83,654 / 141,229 done by 15:30. Partial counts: 37,162 Hc=0, 28,932 Hc=1, 642 Hc=2, 23 Hc=3, 16,502 isohedral, 141 inconclusive, 246 memout, 8 timeout. No Hc=4 yet. The Heesch-4 shape may be among the memouts, since proving the 5th corona impossible is expensive.
-- This run uses the old single-stage runner. Pass 2 (below) uses the new ladder.
+- **M1 pass 1 finished** (owner's Mac, 15:02–15:46, 44 min wall, 11.2 core-hours, 16 jobs, maxlevel 5, old single-stage runner, peak RSS per check 3.1 GB). All 141,229 free hole-free 11-hexes: **67,644 Hc=0, 47,940 Hc=1, 816 Hc=2, 29 Hc=3**, 24,289 isohedral, 511 unsettled (183 inconclusive, 319 memout, 9 timeout). No Hc=4 among settled shapes. Kaplan reports exactly one Heesch-4 11-hex, presumably among the 511 unsettled. Results: `results/hex11.jsonl`.
+- **M1 pass 2:** waiting for the owner to start it (command below).
+- **Scorer step 1** (agent, cloud). First result: 4 residual blocks, 6 epochs, 71 s on 2 CPU cores, all 29 Hc=3 shapes hidden from training. On held-out shapes: among non-tilers, Hc>=3 vs rest AUC **0.94** (it extrapolates to a level it never saw); Hc>=2 AUC 0.83; tiler vs non-tiler AUC 0.75 (the weak part). The top 1% of picks holds 4/29 Hc=3, about 14× random. An 8-block, 12-epoch run is in progress. Code: `halo/scorer.py` (training; needs torch) and `halo/aner_scorer.py` (ANER inference plus NumPy reference; the NumPy forward matches torch to 5e-7). Weights go in `results/models/*.npz` (git-ignored).
+- **Track B prototype** (agent, cloud): `halo/gen_marked.py` scales base polyominoes 3× and puts a 1-cell bump or nick (or nothing) on each base edge. Bases of 1–2 cells give 163 shapes, best Hc=2. 3-cell bases (2,897 shapes) are being checked.
 
 ## Next steps (in order)
 
