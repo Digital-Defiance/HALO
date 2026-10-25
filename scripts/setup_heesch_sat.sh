@@ -17,3 +17,6 @@ esac
 cp "$ROOT/third_party/heesch-sat/$MK" "$DEST/src/Makefile.halo"
 make -C "$DEST/src" -f Makefile.halo -j"$JOBS" sat gen report
 echo "Built $DEST/src/sat"
+# HALO's fast periodic tiling detector (C++, no dependencies)
+c++ -O2 -std=c++17 -o "$(dirname "$DEST")/periodic_dlx" "$ROOT/halo/periodic_dlx.cpp"
+echo "Built $(dirname "$DEST")/periodic_dlx"

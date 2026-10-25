@@ -145,11 +145,16 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir):
 
 
 PERIODIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "periodic.py")
+PERIODIC_DLX = os.path.join(ROOT, "build", platform.system(), "periodic_dlx")
 
 
 def run_periodic(line, budget, max_t):
-    """Run the periodic tiling detector in its own process (keeps the GIL out of the way)."""
-    cmd = [sys.executable, PERIODIC, "--shape", line, "--json", "--budget", str(budget), "--max-t", str(max_t)]
+    """Run the periodic tiling detector in its own process (keeps the GIL out of the way).
+    Uses the C++ build (50-140x faster) when present, else the Python reference."""
+    if os.access(PERIODIC_DLX, os.X_OK):
+        cmd = [PERIODIC_DLX, line, str(max_t), str(budget)]
+    else:
+        cmd = [sys.executable, PERIODIC, "--shape", line, "--json", "--budget", str(budget), "--max-t", str(max_t)]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=budget + 60).stdout
         info = json.loads(out.strip().splitlines()[-1])

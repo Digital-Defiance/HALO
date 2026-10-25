@@ -12,6 +12,7 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 baseline runni
 - `halo/shape.py`: parsing, Epoch constraint check (cells, both span readings, connectivity, holes for O and H grids), canonical free form. Hole check agrees exactly with `gen` on 8-ominoes (6/6) and 8-hexes (13/13). Canonical form is invariant under all symmetries plus translations (3,363 random tests).
 - `scripts/parallel_classify.sh`: simpler split-and-run. Superseded by `runner.py`, kept for quick use.
 - `halo/periodic.py`: periodic tiling detector (torus exact cover, proofs verified). Wired into `runner.py` via `--periodic-budget`/`--periodic-quick`/`--timeout-long`. See SPEC §4.
+- `halo/periodic_dlx.cpp`: C++ Dancing Links port, **50–140× faster**, same answers (same t and lattice on all test tilers). Built by `scripts/setup_heesch_sat.sh` into `build/<OS>/periodic_dlx`; the runner uses it automatically when present. Tests: 0/20 false positives on octomino non-tilers; 342/342 isohedral octominoes in 0.7 s total; all 4 hard 11-hex tilers settled by the quick probe (≤ 1.5 s each).
 
 ## Measurements (cloud test box, x86, 2 cores)
 
