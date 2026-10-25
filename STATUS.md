@@ -42,7 +42,7 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 baseline runni
 3. **Agent:** summarize the M1 results here (counts, hc histogram, time, the H=4 shape copied to `shapes/reference/`).
 4. **Agent (M2):** Track C local search seeded from Heesch-3/4 shapes. Speed up `periodic.py` (C++ port or SAT) if the detector becomes a bottleneck.
 5. **Owner, optional:** PDFs of Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 (*Math. Intelligencer* 43(3)) into `refs/` for Track A2.
-6. **Agent:** literature check A3: is any polyform with H >= 5 known?
+6. **Agent:** finish literature check A3 for 2024–2026 (as of Kaplan 2023, no polyform with H >= 5 is known). Then start Track B with the cheap route: scale small marked polyforms (bumps/nicks as sub-cells) and run heesch-sat on them.
 
 ## Git workflow
 

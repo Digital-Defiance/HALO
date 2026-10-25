@@ -43,6 +43,10 @@ Key facts that shape the strategy:
 - **Exhaustive enumeration tops out low.** Kaplan's 2022 computation ("Heesch numbers of unmarked polyforms", *Contributions to Discrete Mathematics*) found max H = 3 among polyominoes up to 19 cells, max H = 4 among polyhexes (six shapes, 11–17 cells) and max H = 4 among polyiamonds (one 20-cell shape; enumeration to 24 cells). Small random shapes won't reach 7. The answer has to be designed.
 - **Marked tiles go higher.** With coloured or marked edges, Heesch number 11 is known (DeWeese and Coronaldi, 2010, unpublished, cited by Bašić et al. 2023).
 - **Forced chains give any m for two tiles.** Bašić, Džuklevski and Slivková, "Solutions to Seven and a Half Problems on Tilings", *Electron. J. Combin.* 30(2) (2023) P2.50, prove every m is reached by a two-tile protoset, and by a single tile in two disconnected parts. The mechanism: bumps and nicks force each neighbour's placement, and each corona closes a gap by a fixed amount until no further corona fits. The open step is merging this into **one connected tile**. The authors suggest cutting a multi-tile construction into pieces could do it, but don't carry it out.
+- **The record shapes are not polyforms.** Kaplan's 2023 Canadam talk ("Heesch Numbers of Unmarked Polyforms") notes that Mann's H = 5 and Bašić's H = 6 shapes are not polyforms. So **a polyform with H >= 5 would itself be a new result** (milestone M4), as of 2023; re-check before claiming.
+- **Marked polyforms reach 5.** Mann and Thomas (AMS abstract 1024-52-43, 2006, "Heesch numbers of polyforms with marked edges") report polyforms whose edges carry bumps and nicks, with Heesch numbers 0 through 5, computed by program. An n-edge polyform has 3^n markings (flat, bump, nick per edge). This is the Track B1 starting point.
+- **Realization by scaling.** To turn a marked polyform into an unmarked one, subdivide each cell and draw bumps and nicks as added or removed sub-cells. Squares subdivide into s×s squares (polyomino stays a polyomino). Triangles subdivide into s² triangles. Hexagons don't subdivide into hexagons, but each hexagon is 6 triangles, so a marked polyhex is realized as a polyiamond. Budget: a base of m cells at scale s uses about m·s² cells (≤ 200), and spans scale by s (sum ≤ 29). For example, an 8-cell polyomino at s = 5, or a 4-hex base as 24 triangles at s = 2 (96 triangles) plus bumps.
+- **Kaplan's stated future work** includes "eliminate tiling shapes efficiently", which is what `halo/periodic.py` does.
 - **Precedent:** the 2023 aperiodic "hat" monotile was found by an amateur, David Smith, exploring shapes with Kaplan's software (Smith, Myers, Kaplan, Goodman-Strauss, arXiv:2303.10798).
 
 ## 3. Strategy
@@ -53,11 +57,11 @@ Tracks in priority order. B is the main bet. C runs from day one because it is c
 
 - A1. Reproduce Kaplan's H = 4 polyhexes and polyiamond with our build. Record solve times per level.
 - A2. Obtain Mann's H = 5 and Bašić's H = 6 constructions. The papers are paywalled, so the owner may need to supply PDFs. Try to rasterize each as a polyform within the §1 limits and certify it. If rasterizing lowers the Heesch number, document which new neighbour placements caused it. That failure mode is exactly what Track B must avoid.
-- A3. Literature check: is any **polyform** with H >= 5 already known? If not, a polyform with H = 5 or 6 is itself a new result. Verify before claiming.
+- A3. Literature check: is any **polyform** with H >= 5 already known? As of Kaplan's 2023 talk, no: the H=5 and H=6 records are not polyforms. Re-verify (2024–2026 literature) before claiming.
 
 ### Track B: forced-chain construction (primary)
 
-- B1. **Marked-tile solver.** Write a SAT-based Heesch solver for a base polyform with labelled boundary edges and matching rules. heesch-sat has no markings. Reuse its corona encoding ideas. This makes it fast to explore rule systems.
+- B1. **Marked-tile solver.** Write a SAT-based Heesch solver for a base polyform whose boundary edges are flat, bump or nick (Mann–Thomas style; bump must meet nick, flat meets flat), later general labels with matching rules. heesch-sat has no markings. Reuse its corona encoding ideas. First target: reproduce Mann–Thomas Heesch numbers up to 5. Cheaper alternative to try first: realize markings by scaling (§2) and run heesch-sat directly on the result, which needs no new solver.
 - B2. **Design rule systems** with marked H >= 8 or 9. Aim above 7 for margin, because geometric realization tends to lose a level. Use LLM-assisted design plus local search over rule systems. Hexagon-like base shapes with 6 neighbours are a natural start. Follow Mann's and Bašić's patterns and the forced-chain mechanism of Bašić et al. 2023.
 - B3. **Geometric realization.** Turn each label pair into complementary bump/notch cell patterns on a finer grid, scale s, so that only intended neighbours fit. This is the hard part. The 200-cell and span <= 29 budget is tight, so choose base size and scale together.
 - B4. Certify with heesch-sat. Feed failures back to B2/B3. Hand near-misses to Track C for repair.
@@ -102,7 +106,7 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 | M1 | Baseline | Kaplan's H=4 shapes reproduced; per-level timing table in STATUS.md; Mann/Bašić status documented |
 | M2 | Harness | parallel runner + constraint checker + JSONL + resume; Track C running natively overnight |
 | M3 | Marked solver | solver agrees with heesch-sat on unmarked inputs; a rule system with marked H >= 7 found |
-| M4 | H >= 5 polyform | first from our pipeline (possibly new, see A3) |
+| M4 | H >= 5 polyform | first from our pipeline. Likely a new result in itself (record H=5/6 shapes aren't polyforms; Kaplan 2023) |
 | M5 | H = 6 polyform | ties the record within verifier limits |
 | M6 | H >= 7 | passes all §1 checks independently on two machines; write-up and public repo |
 
@@ -136,3 +140,5 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - C. Mann, "Heesch's tiling problem", Amer. Math. Monthly 111(6) 2004
 - Smith, Myers, Kaplan, Goodman-Strauss, "An aperiodic monotile": https://arxiv.org/abs/2303.10798
 - Heesch's problem (overview): https://en.wikipedia.org/wiki/Heesch%27s_problem
+- C. S. Kaplan, Canadam 2023 talk slides: https://cs.uwaterloo.ca/~cbright/talks/cam/heesch.pdf
+- C. Mann, B. Thomas, "Heesch numbers of polyforms with marked edges" (AMS abstract, 2006): https://community.ams.org/amsmtgs/2134_abstracts/1024-52-43.pdf
