@@ -22,6 +22,10 @@ a quarter of the checks to shapes made by relaxing an elite parent to soft occup
 the scorer's gradient ("cell" or Gaussian "splat" mode; several modes take turns). Logged as
 generator search-relax-<mode>, so a run doubles as a bake-off against search / search-scored.
 
+Neighbourhood sweep (on by default, --sweep-min-hc 3): every one-cell edit of each parent with
+hc >= 3 is checked, best parents first, and each new hc >= 3 find is swept in turn. Logged as
+generator search-sweep.
+
 Square and hex grids only (mutation needs grid adjacency).
 """
 import argparse
@@ -138,6 +142,11 @@ def main():
                          "need more memory: runs 1-2 lost two Hc=4 and three Hc=3 shapes to the 3 GB cap")
     ap.add_argument("--retry-mem-mb", type=float, default=12000.0)
     ap.add_argument("--retry-timeout", type=float, default=1200.0)
+    ap.add_argument("--sweep-min-hc", type=int, default=3,
+                    help="systematically check every one-cell edit (add, remove, move) of each parent with at "
+                         "least this hc, best parents first; new finds at that level are swept too. 0 = off")
+    ap.add_argument("--sweep-frac", type=float, default=0.5,
+                    help="fraction of checks given to the sweep while it has work")
     ap.add_argument("--defect-min-hc", type=int, default=3,
                     help="for non-tilers with at least this hc, also measure how close they come to the next "
                          "corona: the fewest uncovered cells next to an hc-patch (third_party/heesch-sat/"
@@ -249,12 +258,21 @@ def main():
     explore_pool = [r for r in parent_pool if (r.get("hc") or 0) >= args.explore_min_hc]
     elite_state = {"elite": [], "dirty": True}
 
+    sweep_heap = []  # (-fitness, tiebreak, canon) of parents whose neighbourhood is still to be swept
+    swept = set()
+
+    def want_sweep(row):
+        if args.sweep_min_hc and (row.get("hc") or 0) >= args.sweep_min_hc and row["canon"] not in swept:
+            swept.add(row["canon"])
+            heapq.heappush(sweep_heap, (tuple(-x for x in fitness(row)), len(swept), row["canon"]))
+
     def note_result(row):
         if row.get("status") != "nontiler":
             return
         live.append(row)
         if ncells(row) < args.parent_min_cells:
             return
+        want_sweep(row)
         parent_pool.append(row)
         if (row.get("hc") or 0) >= args.explore_min_hc:
             explore_pool.append(row)
@@ -359,6 +377,50 @@ def main():
                 queue.append((pred, canon, parent, op))
         queue.sort(key=lambda q: -q[0])
 
+    for r in parent_pool:
+        want_sweep(r)
+    sweep_q = collections.deque()
+
+    def neighbours(canon):
+        """Every valid, unchecked one-cell edit (add, remove, move) of a shape."""
+        g, cells = shp.parse(canon)
+        s = set(cells)
+        nb = shp.NEIGHBOURS[g]
+        frontier = sorted({(x + dx, y + dy) for x, y in s for dx, dy in nb} - s)
+        edits = [(sorted(s | {f}), "add") for f in frontier]
+        for c in sorted(s):
+            rest = s - {c}
+            edits.append((sorted(rest), "remove"))
+            for f in sorted({(x + dx, y + dy) for x, y in rest for dx, dy in nb} - rest - {c}):
+                edits.append((sorted(rest | {f}), "move"))
+        out, seen = [], set()
+        for new, op in edits:
+            if not (args.min_cells <= len(new) <= args.max_cells):
+                continue
+            ok, problems, _ = shp.check(line_of(g, new))
+            if not ok or any("stricter" in q for q in problems):
+                continue
+            k = shp.canonical(g, new)
+            if k in archive or k in seen:
+                continue
+            seen.add(k)
+            out.append((k, "sweep:" + op))
+        return out
+
+    def next_sweep():
+        while not sweep_q and sweep_heap:
+            _, _, parent = heapq.heappop(sweep_heap)
+            for k, op in neighbours(parent):
+                sweep_q.append((k, parent, op))
+        while sweep_q:
+            k, parent, op = sweep_q.popleft()
+            if k in archive:
+                continue
+            with lock:
+                archive[k] = {"canon": k, "status": "pending"}
+            return k, parent, op, None
+        return None
+
     relaxers, rqueue = [], []
     if args.relax_frac > 0:
         if sc is None:
@@ -394,6 +456,10 @@ def main():
     disabled = set()  # guided generators switched off by the guard
 
     def next_job():
+        if args.sweep_min_hc and rng.random() < args.sweep_frac:
+            job = next_sweep()
+            if job is not None:
+                return job
         if relaxers and rng.random() < args.relax_frac:
             if not rqueue:
                 refill_relax()
@@ -436,6 +502,8 @@ def main():
     def generator_of(op, pred):
         if op.startswith("relax-"):
             return "search-" + op.split(":")[0]
+        if op.startswith("sweep:"):
+            return "search-sweep"
         return "search-scored" if pred is not None else "search"
 
     def check(canon, opts):

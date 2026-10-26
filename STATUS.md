@@ -83,6 +83,24 @@ Fixes in `search.py`:
 - **`H 0 2 0 3 0 4 1 2 1 3 1 4 2 1 2 2 2 3 3 1 3 2 3 3 4 1 4 2 4 3 5 0 5 1 5 2 5 3 6 1 6 2`**: 21 cells, Hc = Hh = 4, spans 6 + 4. Found 11:58 by the scorer arm (prediction 0.96) as a one-cell "add" mutant of a 20-cell shape. It first hit the 3 GB cap and was settled by the new 10 GB retry (6.2 GB, 44 s). Without today's retry it would have been logged as a memout. Witness: `shapes/hex21_h4.witness` (61 copies). **`halo/verify.py` passes it** (hole-free Heesch number >= 4, independent of heesch-sat). Hc is exactly 4 because heesch-sat finds no 5-corona even with holes. That's beyond Kaplan's enumeration (<= 17 cells) and ties the polyform record (Hc=4). It is not a new record. A Layr-Labs challenge participant also reports Hc=4 polyhexes at 20 and 21 cells (PR #105, unpublished coordinates), so we can't claim it's the first at this size.
 - First ~55 min of run 3 (106k checks, all 18+ cells): scorer v3 picks Hc>=2 0.62% (0.56–0.69%), random mutants 0.12% (0.09–0.15%). That's **~5× at the frontier**. 22 Hc>=3 shapes at 18–21 cells (16 from the scorer arm, 6 random) and the Hc=4 above.
 
+## Run 3, continued: the guard switched the scorer off; scorer v4 (2026-10-26)
+
+- At ~133k checks (about 12:28), the guard switched off the v3 arm: Hc>=2 in 2 of its last 2,000 picks (0.10%) vs 0.35% for random mutants. Hc>=2 rate by 20-minute window, scored vs random: 0.72% vs 0.05% (11:40), 0.50% vs 0.18% (12:00), 0.35% vs 0.24% (12:20). Random mutants improved as their parents moved from Kaplan's 15–17-cell seeds (which need 1–3 random cells grown) to run 3's own 18–21-cell finds (one edit away). v3, trained on few 18+ shapes, faded. Over the whole run, the scored arm still produced 375 Hc>=2 shapes and the 21-cell Hc=4.
+- **Scorer v4** (`results/models/scorer_v4_hex.npz`, Git LFS): 11-hexes + runs 1–3 (470,680 shapes), same settings as v3 (22×22, `--tiler-hc nan`, 12 epochs, loss 0.75 → 0.58). Held-out AUCs: tiler 0.885, Hc>=2 0.910, Hc>=3 0.937. Hc>=2 rate among its top picks on v4's held-out run-3 shapes:
+
+  | Subset | n | base | v3 top 1.6% | v4 top 1.6% | v3 top 5% | v4 top 5% |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | all | 22,879 | 0.35% | 2.73% | 3.83% | 2.27% | 2.10% |
+  | random-arm rows only (unbiased) | 11,522 | 0.10% | 1.09% | 1.09% | 0.35% | 0.69% |
+  | scored-arm rows only | 11,357 | 0.60% | 3.31% | 2.76% | 2.29% | 3.17% |
+
+  v4 is no worse than v3 and about 10× the base rate on unbiased mutants. The random-arm rows hold only a dozen positives, so this is not a proven gain.
+- Planned relaunch ("run 3b"): sweep 50% (while it has work), then v4-scored and random 50/50, guard on, defects for Hc>=3 finds.
+
+## Neighbourhood sweep (2026-10-26)
+
+`search.py --sweep-min-hc 3 --sweep-frac 0.5` (default on). Every valid, unchecked one-cell edit (add, remove, move) of each parent with hc >= 3 is queued, best parents first (by fitness), and each new hc >= 3 find is swept in turn. This is a systematic walk of the Hc>=3 and Hc=4 plateaus, instead of sampling them at random through a 64-shape elite. A 21-cell parent has about 460 edits, and checks at 18+ cells cost 0.1–0.3 s, so a full sweep of all current Hc>=3 parents is ~13k checks (~10 min on the Mac). Logged as generator `search-sweep`.
+
 ## Next-corona defect solver (2026-10-26)
 
 - **Why:** Hc is a coarse integer, so search on a plateau of Hc=3 or Hc=4 shapes is a random walk. The Layr-Labs/heesch challenge (public, same goal and limits as the Epoch problem, AI-agent submissions as of 2026-10-20, nobody at 5) scores Hc + covered fraction of the next corona's required cells. Their best is 4.988 (a 15-hex, 3/254 uncovered). We now measure the same kind of quantity ourselves.
@@ -190,6 +208,9 @@ Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed str
 - Don't run `pkill -f sat` from a shell whose own command line contains "sat"; it kills itself.
 - Never run a whole batch in one `sat` process: one runaway shape can OOM-kill everything. Use `halo/runner.py`.
 - In classified heesch-sat files, status lines like `I 1 0` (isohedral) and `O 0` (hole) look like shape lines. Feed tools bare shape lines (one per line) or runner JSONL.
+- The same self-kill applies to any `pkill -f <pattern>` whose pattern appears in the calling shell's command line (it bit the agent again with `scorer.py`). Kill by PID instead.
+- Agent tooling: a file pushed to the Mac with the device commit tool right after an edit has twice arrived as the previous version. Compare sha256 on both sides before `git commit`. The tool also writes mode 600, so restore +x on scripts (`chmod 755`) before committing, or git records a mode change.
+- Expensive shapes are the interesting ones: Hc>=3 checks at 18+ cells take 10–45 s and 2–6 GB. Keep the memout retry (`--retry-jobs`) on.
 
 ## Open questions
 
