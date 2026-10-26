@@ -41,12 +41,12 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 done. First ov
 
 `results/search_hex_01.jsonl`: 47,157 checks. Non-tilers: Hc 0: 7,865 · 1: 14,279 · 2: 886 · 3: 29 (new shapes, 10–17 cells). Also 23,202 isohedral, 884 periodic, 12 memout. **No new Hc>=4** (the printed Hc=4 is the seed in canonical form). Largest Hc=3: 17 cells. At 18–21 cells: Hc <= 2.
 - **Throughput collapsed** from 18,994 checks in hour 1 to ~2,400/hour later. The checker used only **5.9 of ~128 available core-hours**. Cause: `pick_parent()` re-sorted the whole archive for every candidate (13 ms per pick at 25k entries). **Fixed:** incremental elite list (77,000× faster pick); per-candidate cost is now ~0.14 ms.
-- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2** (training): all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. A 1-epoch smoke test already cut tilers in the top 2% from 51% to 7%.
+- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2:** all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. The first full run **diverged at epoch 3** (loss 1.26 → 5.8e10): the single Hc=4 shape got sample weight ~259 (√(67k/1)) on top of a 1e-3 peak LR. Fix: weights capped at 20, gradient-norm clip 1.0, peak LR 5e-4. Retraining.
 - Compute split: the periodic detector took 45% of checker time (884 shapes, mean 11 s), non-tilers 43%.
 
 ## ANER GPU tuning (2026-10-26; changes in /Volumes/Code/ANER, **uncommitted**)
 
-Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed straight into shared Metal buffers), lighter GPU lowering (consts as [C,1] columns; diagonal conv → elementwise multiply), `ANER_GPU_CHUNK` (default now 4096), `ANER_GPU_PIPELINE`, `ANER_GPU_OPT_LEVEL`. `make test` passes. Sweep (`scripts/bench_aner_gpu.sh`, scorer v1, 65,536 shapes): GPU-only 1.08M → **1.67M** shapes/s, split 1.47M → **2.03M** (MLX fp16 1.49M). Opt level 1: no gain, and at 8192 it moved work onto the NE. **Open issue:** ANER's own split test shows split 40.3 ms vs NE-only 12.2 ms on a deep chain where the NE is much faster. Greedy chunk claiming lets the slower GPU take half the batch. Proposed fix: throughput-aware claiming.
+Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed straight into shared Metal buffers), lighter GPU lowering (consts as [C,1] columns; diagonal conv → elementwise multiply), `ANER_GPU_CHUNK` (default now 4096), `ANER_GPU_PIPELINE`, `ANER_GPU_OPT_LEVEL`. `make test` passes. Sweep (`scripts/bench_aner_gpu.sh`, scorer v1, 65,536 shapes): GPU-only 1.08M → **1.67M** shapes/s, split 1.47M → **2.03M** (MLX fp16 1.49M). Opt level 1: no gain, and at 8192 it moved work onto the NE. ANER's own split test showed split 40.3 ms vs NE-only 12.2 ms on a deep chain, because greedy claiming let the slower GPU take half the batch. **Fixed on ANER branch `gpu-perf`** (`d6c094e`): split programs time each engine at compile time and refine during batches; an engine claims a chunk only if it can finish it before the other engine could finish everything left; the last active worker never steps aside. Owner to rebuild and re-test. The GPU speedups are commit `2c1122f` on the same branch.
 
 ## Next steps (in order)
 
@@ -83,7 +83,7 @@ Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed str
 ## Git workflow
 
 - Repo: `https://github.com/Digital-Defiance/HALO` (branch `main`).
-- The agent commits in `/Volumes/Code/HALO` through its Linux shell. It has delete permission for that folder this session, so git can clean up its lock files. Commits are authored as the owner with a `Co-Authored-By: Claude` trailer. The owner pushes from macOS.
+- The agent commits in `/Volumes/Code/HALO` (and in ANER on branch `gpu-perf`) through its Linux shell, with delete permission so git can clean up lock files. Commits are authored as `Jessica Mulein <jessica@digitaldefiance.org>` with a `Co-Authored-By: Claude` trailer. HALO commits from 806cf07 to 1df9296 used the owner's Gmail address; 806cf07 is already pushed, so history was not rewritten. The owner pushes from macOS.
 - `results/*.txt` (raw `gen` dumps) and `build/` are git-ignored. JSONL results are committed.
 
 ## Environment

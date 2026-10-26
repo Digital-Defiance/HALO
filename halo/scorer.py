@@ -163,7 +163,10 @@ def main():
     ap.add_argument("--blocks", type=int, default=8)
     ap.add_argument("--epochs", type=int, default=8)
     ap.add_argument("--batch", type=int, default=512)
-    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--lr", type=float, default=5e-4)
+    ap.add_argument("--max-weight", type=float, default=20.0,
+                    help="cap on the per-sample weight for rare hc levels (one hc=4 shape at weight ~259 blew up training)")
+    ap.add_argument("--clip", type=float, default=1.0, help="gradient-norm clip")
     ap.add_argument("--holdout-top", action="store_true",
                     help="exclude all shapes with the highest hc from training (extrapolation test)")
     ap.add_argument("--seed", type=int, default=0)
@@ -197,7 +200,7 @@ def main():
     # sample weights: emphasize rare high-hc non-tilers
     counts = {h: max(1, int(((hc == h) & (tile == 0))[train].sum())) for h in range(top + 1)}
     def weight(i):
-        return 1.0 if tile[i] else (counts[0] / counts[int(hc[i])]) ** 0.5
+        return 1.0 if tile[i] else min(args.max_weight, (counts[0] / counts[int(hc[i])]) ** 0.5)
 
     model = build_model(args.width, args.blocks, inp)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -227,6 +230,7 @@ def main():
             loss = ((l_tile + l_hc) * wb).mean()
             opt.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
             opt.step()
             sched.step()
             tot += loss.item()
