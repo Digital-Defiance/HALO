@@ -226,6 +226,9 @@ def main():
     ap.add_argument("--schedules", default="ane,gpu,split", help="ANER schedules to time (comma-separated)")
     ap.add_argument("--no-mlx", action="store_true", help="skip the MLX GPU reference")
     ap.add_argument("--label", default="", help="prefix for ANER result lines (e.g. the config being tested)")
+    ap.add_argument("--spatial", default="64",
+                    help="compile widths (columns per Neural Engine dispatch) to try, comma-separated, e.g. "
+                         "64,128,256,512. Wider tiles mean fewer dispatches per batch, if the hardware accepts them")
     args = ap.parse_args()
 
     import scorer  # featurization lives there; torch is not needed for this path
@@ -256,11 +259,18 @@ def main():
     g = build_graph(W, blocks)
     Xt = np.ascontiguousarray(X.T)  # ANER wants (channels, columns)
     rank_ref = np.argsort(np.argsort(ref[:, 1]))
-    for name in [x for x in args.schedules.split(",") if x]:
-        prog, label = compile_schedule(g, name)
+    runs = [(name, int(sp)) for sp in args.spatial.split(",") if sp for name in args.schedules.split(",") if name]
+    for name, spatial in runs:
+        try:
+            prog, label = compile_schedule(g, name, spatial)
+        except Exception as exc:  # e.g. a width the Neural Engine compiler rejects
+            print(f"{args.label}{'ANER ' + name.upper():14s} w{spatial}: compile failed: {exc}")
+            continue
         if prog is None:
             print(f"{'ANER ' + name.upper():14s}: skipped: {label}")
             continue
+        if spatial != 64:
+            label = f"{label} w{spatial}"
         engines = "+".join(e for e, on in (("NE", prog.uses_neural_engine),
                                           ("GPU", getattr(prog, "uses_gpu", False))) if on) or "CPU interpreter"
         prog.run_batch(Xt)  # warm-up
