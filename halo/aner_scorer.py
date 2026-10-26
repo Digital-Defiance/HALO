@@ -187,6 +187,11 @@ class Scorer:
                 print(f"Scorer: ANER unavailable ({exc}); using NumPy", file=sys.stderr)
                 self.prog = None
 
+    def featurize(self, line):
+        """Symmetric images of a shape in this scorer's window and input size (may be empty)."""
+        import scorer as scorer_mod
+        return scorer_mod.images(line, self.window, self.W["inp.weight"].shape[1])
+
     @property
     def backend(self):
         if self.mlx_fwd is not None:
@@ -226,7 +231,8 @@ def main():
     import scorer  # featurization lives there; torch is not needed for this path
     W, blocks, window = load_weights(args.weights)
     rows = scorer.load(args.jsonl)[: args.n]
-    X = np.stack([scorer.images(line)[0] for line, _, _ in rows]).astype(np.float32)  # (N, 256)
+    inp = W["inp.weight"].shape[1]
+    X = np.stack([ims[0] for ims in (scorer.images(r[0], window, inp) for r in rows) if ims]).astype(np.float32)
     n = len(X)
     print(f"{n} shapes, network: {blocks} residual blocks, width {W['inp.weight'].shape[0]}, "
           f"{2 + 2 * blocks} linear layers")

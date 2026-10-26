@@ -20,6 +20,7 @@ With the learned scorer as a prefilter (ANER on Neural Engine + GPU):
 Square and hex grids only (mutation needs grid adjacency).
 """
 import argparse
+import heapq
 import json
 import math
 import os
@@ -164,14 +165,29 @@ def main():
     best_seen = max((fitness(r) for r in archive.values()), default=(-1, -1, 0))
     print(f"best so far: hc={best_seen[0]}", flush=True)
 
+    # Parents: all non-tilers (`live`) and the top-N of them (`elite`). Both are kept up to date
+    # incrementally; re-sorting the whole archive per candidate made the first overnight run
+    # spend >95% of its time in Python with the checker cores idle.
+    live = [r for r in archive.values() if r.get("status") == "nontiler"]
+    elite_state = {"elite": [], "dirty": True}
+
+    def note_result(row):
+        if row.get("status") != "nontiler":
+            return
+        live.append(row)
+        el = elite_state["elite"]
+        if len(el) < args.elite or fitness(row) > fitness(el[-1]):
+            elite_state["dirty"] = True
+
     def pick_parent():
-        live = [r for r in archive.values() if r.get("status") == "nontiler"]
         if not live:
             return None
         if rng.random() < args.explore:
             return rng.choice(live)
-        live.sort(key=fitness, reverse=True)
-        return rng.choice(live[: args.elite])
+        if elite_state["dirty"]:
+            elite_state["elite"] = heapq.nlargest(args.elite, live, key=fitness)
+            elite_state["dirty"] = False
+        return rng.choice(elite_state["elite"])
 
     def gen_candidate(exclude=()):
         """A new valid mutant (canon, parent canon, op), not yet in the archive; None if stuck."""
@@ -205,7 +221,6 @@ def main():
     sc = None
     if args.scorer:
         import aner_scorer
-        import scorer as scorer_mod
         sc = aner_scorer.Scorer(args.scorer, args.scorer_schedule)
         print(f"scorer: {args.scorer} on {sc.backend}; {args.candidates} candidates -> best {args.pick} "
               f"per refill, {args.random_frac:.0%} random checks", flush=True)
@@ -222,7 +237,7 @@ def main():
             cands[c[0]] = c
         feats, owner = [], []
         for canon in cands:
-            ims = scorer_mod.images(canon)
+            ims = sc.featurize(canon)
             for v in ims:
                 feats.append(v)
                 owner.append(canon)
@@ -254,6 +269,7 @@ def main():
         pred, canon, parent, op = queue.pop(0)
         return canon, parent, op, pred
 
+    gen_stats = {}
     with open(args.log, "a") as logfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
         running = {}
         t0 = time.monotonic()
@@ -283,29 +299,30 @@ def main():
                     row["witness"] = record
                 with lock:
                     archive[canon] = row
+                    note_result(row)
                     logfh.write(json.dumps(row) + "\n")
                     logfh.flush()
                 evals += 1
+                ga, gg, gt = gen_stats.get(row["generator"], (0, 0, 0))
+                gen_stats[row["generator"]] = (ga + 1, gg + int(row["status"] == "nontiler" and (row["hc"] or 0) >= 2),
+                                               gt + int(row["status"] in ("isohedral", "periodic")))
                 f = fitness(row)
                 if f[0] > best_seen[0]:
                     best_seen = f
                     print(f"  NEW BEST hc={row['hc']} hh={row['hh']} cells={row['cells']}: {canon}", flush=True)
                 if evals % 100 == 0:
                     hist = {}
-                    for r in archive.values():
-                        if r.get("status") == "nontiler":
-                            hist[r["hc"]] = hist.get(r["hc"], 0) + 1
+                    for r in live:
+                        hist[r["hc"]] = hist.get(r["hc"], 0) + 1
                     rate = evals / (time.monotonic() - t0)
                     print(f"  {evals} evals, {rate:.1f}/s, archive {len(archive)}, non-tilers by hc: "
                           + ", ".join(f"{k}:{v}" for k, v in sorted(hist.items())), flush=True)
                     if sc is not None:
                         for gen in ("search-scored", "search"):
-                            rs = [r for r in archive.values() if r.get("generator") == gen and "status" in r
-                                  and r["status"] != "pending"]
-                            if rs:
-                                good = sum(1 for r in rs if r.get("status") == "nontiler" and (r.get("hc") or 0) >= 2)
-                                print(f"     {gen:13s}: {len(rs)} checked, {good} with hc>=2 ({100*good/len(rs):.1f}%)",
-                                      flush=True)
+                            n_all, n_good, n_tile = gen_stats.get(gen, (0, 0, 0))
+                            if n_all:
+                                print(f"     {gen:13s}: {n_all} checked, hc>=2 {n_good} ({100*n_good/n_all:.1f}%), "
+                                      f"tilers {100*n_tile/n_all:.0f}%", flush=True)
     print(f"done: {evals} evaluations; best hc={best_seen[0]}")
     top = sorted((r for r in archive.values() if r.get("status") == "nontiler"), key=fitness, reverse=True)[:10]
     for r in top:

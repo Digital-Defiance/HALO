@@ -1,6 +1,6 @@
 # HALO status
 
-Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 done (11-ominoes and 11-hexes match Kaplan exactly). Scorer runs at 1.48M shapes/s on NE+GPU via ANER. Search loop built. Next: scorer-filtered search toward the first Hc=5 polyform (M4).**
+Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 done. First overnight search (47k checks) found nothing above Hc=3 beyond the seeds. It was throttled by a Python bug (fixed) and the scorer favoured tilers (v2 retraining). ANER GPU path sped up 1.55× (split 2.03M shapes/s, uncommitted in ANER). Next: rerun the search with the fix and scorer v2.**
 
 ## Done
 
@@ -36,6 +36,17 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 done (11-omino
 - **Independent witness verifier: `halo/verify.py`** (no heesch-sat). Checks grid-symmetry transforms, no overlaps, each corona touches and fully encloses the previous patch (edges and corners), and every patch is a disk (connected, no holes, no square-grid pinch corners). Passes both references and all 29 Hc=3 witnesses from pass 1. Rejects tampered witnesses: dropped level-4 or level-3 copy, shifted copy (overlap), claimed hc=5, shear matrix.
 - **Scorer-filtered search** in `halo/search.py` (`--scorer`): each refill generates `--candidates` mutants, scores all their symmetric images, queues the best `--pick`; `--random-frac` of checks go to unscored mutants as a control. Records log `pred` and `generator` (search-scored vs search). Cloud test (numpy scorer, 300 checks): scored 4/210 Hc>=2 vs random 0/90, too small to conclude. `--prefer-min-cells` breaks hc ties toward unexplored sizes (Kaplan enumerated polyhexes to 17 cells, so an Hc=5 polyhex needs 18+). Seeds: `results/seeds_hex11_hc3plus.jsonl` (37 × Hc=3 + the Hc=4).
 - `halo/runner.py` refactored: the ladder is now `runner.classify()`, shared with search.py. 8-ominoes fully settled in 18.5 s (was 57 s with one shape unsettled).
+
+## First overnight search (2026-10-25 19:06 → 2026-10-26 03:07, owner's Mac)
+
+`results/search_hex_01.jsonl`: 47,157 checks. Non-tilers: Hc 0: 7,865 · 1: 14,279 · 2: 886 · 3: 29 (new shapes, 10–17 cells). Also 23,202 isohedral, 884 periodic, 12 memout. **No new Hc>=4** (the printed Hc=4 is the seed in canonical form). Largest Hc=3: 17 cells. At 18–21 cells: Hc <= 2.
+- **Throughput collapsed** from 18,994 checks in hour 1 to ~2,400/hour later. The checker used only **5.9 of ~128 available core-hours**. Cause: `pick_parent()` re-sorted the whole archive for every candidate (13 ms per pick at 25k entries). **Fixed:** incremental elite list (77,000× faster pick); per-candidate cost is now ~0.14 ms.
+- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2** (training): all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. A 1-epoch smoke test already cut tilers in the top 2% from 51% to 7%.
+- Compute split: the periodic detector took 45% of checker time (884 shapes, mean 11 s), non-tilers 43%.
+
+## ANER GPU tuning (2026-10-26; changes in /Volumes/Code/ANER, **uncommitted**)
+
+Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed straight into shared Metal buffers), lighter GPU lowering (consts as [C,1] columns; diagonal conv → elementwise multiply), `ANER_GPU_CHUNK` (default now 4096), `ANER_GPU_PIPELINE`, `ANER_GPU_OPT_LEVEL`. `make test` passes. Sweep (`scripts/bench_aner_gpu.sh`, scorer v1, 65,536 shapes): GPU-only 1.08M → **1.67M** shapes/s, split 1.47M → **2.03M** (MLX fp16 1.49M). Opt level 1: no gain, and at 8192 it moved work onto the NE. **Open issue:** ANER's own split test shows split 40.3 ms vs NE-only 12.2 ms on a deep chain where the NE is much faster. Greedy chunk claiming lets the slower GPU take half the batch. Proposed fix: throughput-aware claiming.
 
 ## Next steps (in order)
 
