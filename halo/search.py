@@ -78,14 +78,22 @@ PREFER_MIN_CELLS = 0  # set from --prefer-min-cells
 
 def fitness(rec):
     """Sort key: higher is better. Non-tilers by hc, then (optionally) size in unexplored territory,
-    then hh, then (with a size target) closeness to it, then checker time at the deciding level."""
+    then hh, then closeness to the next corona (defect), then (with a size target) closeness to it,
+    then checker time at the deciding level."""
     if rec.get("status") != "nontiler" or rec.get("hc") is None:
-        return (-1, 0, -1, 0, 0.0)
+        return (-1, 0, -1, -1.0, 0, 0.0)
     cells = rec.get("cells") or 0
     big = 1 if PREFER_MIN_CELLS and cells >= PREFER_MIN_CELLS else 0
     # with a size target, larger parents win ties (fewer cells to grow, closer to the target)
     near = min(cells, PREFER_MIN_CELLS) if PREFER_MIN_CELLS else 0
-    return (rec["hc"], big, rec.get("hh") or rec["hc"], near, min(rec.get("seconds", 0.0), 600.0))
+    return (rec["hc"], big, rec.get("hh") or rec["hc"], -defect_frac(rec), near, min(rec.get("seconds", 0.0), 600.0))
+
+
+def defect_frac(rec):
+    """Share of the cells next to an hc-patch that the best (hc+1)-corona found leaves
+    uncovered (lower is closer to Heesch number hc+1); 1.0 when not measured."""
+    d, r = rec.get("defect"), rec.get("ring")
+    return d / r if d is not None and r else 1.0
 
 
 def main():
@@ -130,6 +138,14 @@ def main():
                          "need more memory: runs 1-2 lost two Hc=4 and three Hc=3 shapes to the 3 GB cap")
     ap.add_argument("--retry-mem-mb", type=float, default=12000.0)
     ap.add_argument("--retry-timeout", type=float, default=1200.0)
+    ap.add_argument("--defect-min-hc", type=int, default=3,
+                    help="for non-tilers with at least this hc, also measure how close they come to the next "
+                         "corona: the fewest uncovered cells next to an hc-patch (third_party/heesch-sat/"
+                         "defect.cpp). Used as a fitness tie-breaker after hc and hh; 0 = off")
+    ap.add_argument("--defect-timeout", type=float, default=120.0)
+    ap.add_argument("--defect-confl", type=int, default=500000,
+                    help="SAT conflict budget per defect solve; when it runs out the defect is an upper bound")
+    ap.add_argument("--defect-mem-mb", type=float, default=6000.0)
     ap.add_argument("--retry-archived", action="store_true",
                     help="also re-check memout/timeout shapes already in the log (within --min/--max-cells)")
     # learned scorer prefilter (Track D)
@@ -422,6 +438,17 @@ def main():
             return "search-" + op.split(":")[0]
         return "search-scored" if pred is not None else "search"
 
+    def check(canon, opts):
+        """Checker ladder, plus the next-corona defect for high-hc non-tilers."""
+        rec = runner.classify(canon, opts, workdir)
+        if (args.defect_min_hc and rec.get("status") == "nontiler"
+                and (rec.get("hc") or 0) >= args.defect_min_hc):
+            rec.update(runner.run_defect(canon, rec["hc"], rec.get("hh") or rec["hc"], args.defect_timeout,
+                                         args.defect_mem_mb, args.defect_confl))
+        return rec
+
+    closest = {}  # hc -> best defect fraction seen this run at the size target
+
     # Shapes that hit the memory/time cap go to a retry queue with a bigger budget (few at a time).
     retry_opts = argparse.Namespace(**vars(args))
     retry_opts.mem_mb = args.retry_mem_mb
@@ -443,14 +470,14 @@ def main():
             stop = time.monotonic() > deadline or (args.max_evals and evals >= args.max_evals)
             while not stop and retry_q and n_retry < args.retry_jobs:
                 item = retry_q.popleft()
-                running[pool.submit(runner.classify, item[0], retry_opts, workdir)] = item
+                running[pool.submit(check, item[0], retry_opts)] = item
                 n_retry += 1
             while not stop and len(running) - n_retry < args.jobs:
                 prop = next_job()
                 if prop is None:
                     break
                 canon, parent, op, pred = prop
-                running[pool.submit(runner.classify, canon, args, workdir)] = (canon, parent, op, pred, None)
+                running[pool.submit(check, canon, args)] = (canon, parent, op, pred, None)
             if not running:
                 break
             done, _ = wait(list(running), return_when=FIRST_COMPLETED)
@@ -493,6 +520,14 @@ def main():
                         recent[row["generator"]] = collections.deque(maxlen=args.guard_checks)
                     recent[row["generator"]].append(good)
                 f = fitness(row)
+                if (row.get("defect") is not None and row.get("ring")
+                        and row["cells"] >= (PREFER_MIN_CELLS or 0)):
+                    frac = row["defect"] / row["ring"]
+                    if frac < closest.get(row["hc"], 2.0):
+                        closest[row["hc"]] = frac
+                        print(f"  closest yet to hc={row['hc'] + 1} ({row['cells']} cells): {row['defect']} of "
+                              f"{row['ring']} cells uncovered (score {row['hc'] + 1 - frac:.4f}"
+                              f"{'' if row.get('defect_exact') else ', upper bound'}): {canon}", flush=True)
                 if f[0] > best_seen[0]:
                     best_seen = f
                     print(f"  NEW BEST hc={row['hc']} hh={row['hh']} cells={row['cells']}: {canon}", flush=True)

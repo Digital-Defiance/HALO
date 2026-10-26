@@ -18,6 +18,8 @@ report: report.o
 	$(CXX) -o report report.o $(LIBS)
 surrounds: surrounds.o
 	$(CXX) -o surrounds surrounds.o $(LIBS)
+defect: defect.o isohedral.o
+	$(CXX) -o defect defect.o isohedral.o $(LIBS)
 viz: viz.o
 	$(CXX) -o viz viz.o $(LIBS) $(shell pkg-config --libs cairo)
 viz.o: CXXFLAGS += $(shell pkg-config --cflags cairo)

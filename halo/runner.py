@@ -144,6 +144,62 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
     return rec
 
 
+DEFAULT_DEFECT = os.path.join(ROOT, "build", platform.system(), "heesch-sat-defect", "defect")
+
+
+def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=64, binary=DEFAULT_DEFECT):
+    """How close a non-tiler with Heesch number hc comes to an (hc+1)-corona: the fewest
+    cells next to an hc-patch that an (hc+1)-corona leaves uncovered (heesch-sat patched
+    by scripts/setup_heesch_sat.sh; see third_party/heesch-sat/defect.cpp). Returns
+    {"defect": d or None, "ring": r, "defect_exact": bool, "defect_seconds": t, "defect_stop": ...}."""
+    if not os.access(binary, os.X_OK):
+        return {"defect": None, "defect_stop": "no-binary"}
+    grid = line.split()[0].rstrip("?")
+    record = f"{grid} {' '.join(line.split()[1:])}\n~ {hc} {hh} 0\n"
+    cmd = [binary, "-maxd", str(max_d), "-confl", str(confl)]
+    start = time.monotonic()
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    out_box = {}
+
+    def feed():
+        try:
+            out_box["out"] = proc.communicate(record)[0]
+        except Exception:
+            out_box["out"] = ""
+    t = threading.Thread(target=feed, daemon=True)
+    t.start()
+    stop, peak = None, 0.0
+    while t.is_alive():
+        r = rss_mb(proc.pid)
+        if r is not None:
+            peak = max(peak, r)
+            if r > mem_mb:
+                stop = "memout"
+                proc.kill()
+                break
+        if time.monotonic() - start > timeout:
+            stop = "timeout"
+            proc.kill()
+            break
+        t.join(0.25)
+    t.join(5)
+    secs = round(time.monotonic() - start, 3)
+    rec = {"defect": None, "ring": None, "defect_exact": False, "defect_seconds": secs,
+           "defect_peak_rss_mb": round(peak, 1), "defect_stop": stop}
+    if stop:
+        return rec
+    try:
+        info = json.loads(out_box.get("out", "").strip().splitlines()[-1])
+    except Exception:
+        rec["defect_stop"] = "error"
+        return rec
+    if info.get("defect", -1) >= 0:
+        rec.update({"defect": info["defect"], "ring": info["ring"], "defect_exact": bool(info.get("exact"))})
+    else:
+        rec["defect_stop"] = "over-maxd"
+    return rec
+
+
 PERIODIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "periodic.py")
 PERIODIC_DLX = os.path.join(ROOT, "build", platform.system(), "periodic_dlx")
 

@@ -78,6 +78,27 @@ Fixes in `search.py`:
 - Owner restarted without the scorer as a stopgap.
 - **Kaplan's published data:** every polyhex with Hc>=3 or Hh>=3 for 11–17 cells is at `https://cs.uwaterloo.ca/~csk/heesch/hex/<n>hex_3up.txt` (plus PDFs and `heesch_dataset.tar.gz`). That includes all Hc=4 polyhexes: one each at 11, 13, 16 and 17 cells, two at 15. These are the right parents for 18+ cells. The agent sandboxes can't reach the site (proxy 403), so the owner downloads them into `refs/kaplan/` (raw files git-ignored; cite Kaplan 2022).
 
+## Run 3 results so far: a 21-cell Hc=4 polyhex (2026-10-26)
+
+- **`H 0 2 0 3 0 4 1 2 1 3 1 4 2 1 2 2 2 3 3 1 3 2 3 3 4 1 4 2 4 3 5 0 5 1 5 2 5 3 6 1 6 2`**: 21 cells, Hc = Hh = 4, spans 6 + 4. Found 11:58 by the scorer arm (prediction 0.96) as a one-cell "add" mutant of a 20-cell shape. It first hit the 3 GB cap and was settled by the new 10 GB retry (6.2 GB, 44 s). Without today's retry it would have been logged as a memout. Witness: `shapes/hex21_h4.witness` (61 copies). **`halo/verify.py` passes it** (hole-free Heesch number >= 4, independent of heesch-sat). Hc is exactly 4 because heesch-sat finds no 5-corona even with holes. That's beyond Kaplan's enumeration (<= 17 cells) and ties the polyform record (Hc=4). It is not a new record. A Layr-Labs challenge participant also reports Hc=4 polyhexes at 20 and 21 cells (PR #105, unpublished coordinates), so we can't claim it's the first at this size.
+- First ~55 min of run 3 (106k checks, all 18+ cells): scorer v3 picks Hc>=2 0.62% (0.56–0.69%), random mutants 0.12% (0.09–0.15%). That's **~5× at the frontier**. 22 Hc>=3 shapes at 18–21 cells (16 from the scorer arm, 6 random) and the Hc=4 above.
+
+## Next-corona defect solver (2026-10-26)
+
+- **Why:** Hc is a coarse integer, so search on a plateau of Hc=3 or Hc=4 shapes is a random walk. The Layr-Labs/heesch challenge (public, same goal and limits as the Epoch problem, AI-agent submissions as of 2026-10-20, nobody at 5) scores Hc + covered fraction of the next corona's required cells. Their best is 4.988 (a 15-hex, 3/254 uncovered). We now measure the same kind of quantity ourselves.
+- **What:**
+  - `third_party/heesch-sat/halo_defect.patch` (heesch.h): `getClauses` can relax the halo clauses of the last inner corona, one literal per uncovered cell, and `minDefect()` minimises that count with a k-limited totalizer and descending bounds under a conflict budget.
+  - `defect.cpp`: the driver, which prints JSON.
+  - `scripts/setup_heesch_sat.sh` builds it in a separate copy (`build/<OS>/heesch-sat-defect/defect`), so the `sat` binary is never touched. periodic_dlx is now rebuilt only when its source is newer, so re-running the script is safe during a search.
+  - `runner.run_defect()` (memory and time caps).
+  - `search.py --defect-min-hc 3`: Hc>=3 finds get `defect`/`ring` fields. Fitness becomes (hc, big, hh, −defect/ring, …), and the run prints "closest yet" lines.
+  - `halo/add_defects.py` batch-scores existing JSONL (e.g. seeds).
+- **Our definition:** ring = cells next to the k-patch, in our best solution. Our ring counts are not the same as Layr-Labs' (166 vs their 254 for a 15-hex), so compare scores across projects with care.
+- **Measured (exact, 2 cloud cores):**
+  - Kaplan's Hc=4 polyhexes: 11-hex 6/166 uncovered (27 s), 13-hex 5/151 (129 s), one 15-hex 4/166 (261 s, 4.3 GB).
+  - 17-cell Hc=3 seeds: 15/200, 19/247, 15/236 (11–41 s; one exceeded 2.5 GB).
+  - Defect scoring of all 398 Kaplan seeds with 15–17 cells and Hc>=3 is running in the agent cloud.
+
 ## Kaplan's data imported; memout finding; run 3 plan (2026-10-26)
 
 - `results/seeds_kaplan_hex_3up.jsonl` (via `halo/import_kaplan.py` from `refs/kaplan/<n>hex_3up.txt`, which the owner downloaded; the 17-hex file 403s for scripted requests and had to be fetched by hand). It holds 1,263 polyhexes with Hc>=3 or Hh>=3 at 11–17 cells. Hc>=3: 37/10/27/22/179/54/161 at 11–17 cells. Hc=4: one each at 11, 13, 16, 17 and two at 15, matching Kaplan's table.

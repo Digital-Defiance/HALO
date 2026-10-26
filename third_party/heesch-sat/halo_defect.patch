@@ -1,0 +1,226 @@
+diff --git a/src/heesch.h b/src/heesch.h
+index 5d63dcc..2fc233b 100644
+--- a/src/heesch.h
++++ b/src/heesch.h
+@@ -207,6 +207,12 @@ public:
+ 
+ 	void solve( bool get_solution, size_t maxlevel, TileInfo<grid>& info );
+ 
++	// HALO addition. After increaseLevel() has been called L >= 1 times: the
++	// smallest number of cells next to an (L-1)-patch that an L-corona must leave
++	// uncovered (holes allowed in corona L). See minDefect() below.
++	bool minDefect( size_t max_d, uint64_t max_confl, size_t& best_d,
++		size_t& ring, bool& exact, patch_t *soln = nullptr );
++
+ 	void debug( std::ostream& os ) const;
+ 	void debugCurrentPatch( patch_t& soln ) const;
+ 
+@@ -222,7 +228,8 @@ private:
+ 	var_id getCellVariable( const point_t& p );
+ 	var_id getCellVariable( const point_t& p ) const;
+ 
+-	void getClauses( CMSat::SATSolver& solv, bool allow_holes ) const;
++	void getClauses( CMSat::SATSolver& solv, bool allow_holes,
++		point_map<coord_t, CMSat::Lit> *relax = nullptr ) const;
+ 	void getSolution( const CMSat::SATSolver& solv,
+ 		patch_t& ret, size_t lev = 0xDEADBEEF ) const;
+ 	void extendLevelWithTransforms( size_t lev, const xform_set<coord_t>& Ts );
+@@ -511,7 +518,8 @@ void HeeschSolver<grid>::increaseLevel()
+ 
+ template<typename grid>
+ void HeeschSolver<grid>::getClauses(
+-	CMSat::SATSolver& solv, bool allow_holes ) const
++	CMSat::SATSolver& solv, bool allow_holes,
++	point_map<coord_t, CMSat::Lit> *relax ) const
+ {
+ 	std::vector<CMSat::Lit> cl;
+ 
+@@ -552,10 +560,30 @@ void HeeschSolver<grid>::getClauses(
+ 		for (auto v: ti.levelRange(0, level_)) {
+ 			// This is a tile variable at an inner corona.
+ 			cl[0] = neg(v.second);
++			// HALO: with relax, halo cells of the last inner corona may stay
++			// uncovered, each at the price of one relaxation literal.
++			const bool relaxed = (relax != nullptr) && (v.first + 1 == level_);
+ 			for (const auto& p: cloud_.halo_) {
+ 				point_t tp = ti.T_ * p;
+-				cl[1] = pos(getCellVariable(tp));
+-				solv.add_clause(cl);
++				if (relaxed) {
++					CMSat::Lit u;
++					auto it = relax->find(tp);
++					if (it == relax->end()) {
++						solv.new_var();
++						u = CMSat::Lit(solv.nVars() - 1, false);
++						(*relax)[tp] = u;
++					} else {
++						u = it->second;
++					}
++					std::vector<CMSat::Lit> rc {neg(v.second), u};
++					if (hasCell(tp)) {
++						rc.push_back(pos(getCellVariable(tp)));
++					}
++					solv.add_clause(rc);
++				} else {
++					cl[1] = pos(getCellVariable(tp));
++					solv.add_clause(cl);
++				}
+ 			}
+ 		}
+ 	}
+@@ -658,6 +686,155 @@ void HeeschSolver<grid>::getClauses(
+ 	}
+ }
+ 
++// HALO addition: a k-limited totalizer. Returns outs with outs[j] forced true
++// whenever at least j+1 of xs are true (j < K). Assuming ~outs[j] therefore
++// limits the count to at most j.
++static inline std::vector<CMSat::Lit> haloTotalizer(
++	CMSat::SATSolver& s, const std::vector<CMSat::Lit>& xs, size_t K )
++{
++	std::vector<std::vector<CMSat::Lit>> layer;
++	for (const auto& x : xs) {
++		layer.push_back({x});
++	}
++	if (layer.empty() || K == 0) {
++		return {};
++	}
++	while (layer.size() > 1) {
++		std::vector<std::vector<CMSat::Lit>> next;
++		for (size_t i = 0; i + 1 < layer.size(); i += 2) {
++			const auto& a = layer[i];
++			const auto& b = layer[i + 1];
++			size_t m = std::min(K, a.size() + b.size());
++			std::vector<CMSat::Lit> o;
++			for (size_t j = 0; j < m; ++j) {
++				s.new_var();
++				o.push_back(CMSat::Lit(s.nVars() - 1, false));
++			}
++			for (size_t ia = 0; ia <= a.size(); ++ia) {
++				for (size_t ib = 0; ib <= b.size(); ++ib) {
++					size_t t = ia + ib;
++					if (t == 0) {
++						continue;
++					}
++					std::vector<CMSat::Lit> cl;
++					if (ia > 0) cl.push_back(~a[ia - 1]);
++					if (ib > 0) cl.push_back(~b[ib - 1]);
++					cl.push_back(o[std::min(t, m) - 1]);
++					s.add_clause(cl);
++				}
++			}
++			next.push_back(std::move(o));
++		}
++		if (layer.size() % 2) {
++			next.push_back(std::move(layer.back()));
++		}
++		layer.swap(next);
++	}
++	std::vector<CMSat::Lit> outs = layer[0];
++	if (outs.size() > K) {
++		outs.resize(K);
++	}
++	return outs;
++}
++
++// HALO addition: how close does the shape come to an L-corona, where L is the
++// current level? Builds the usual clauses (holes allowed in corona L) but lets
++// halo cells of corona L-1 tiles stay uncovered, one relaxation literal per
++// cell, and minimises the number of uncovered cells with a totalizer.
++//   best_d: fewest uncovered cells next to the (L-1)-patch found (0 means an
++//           L-corona exists, possibly with holes away from the patch)
++//   ring:   number of cells next to the (L-1)-patch in that solution
++//   exact:  best_d was proven optimal (otherwise the conflict budget ran out)
++// Returns false if nothing with at most max_d uncovered cells was found.
++template<typename grid>
++bool HeeschSolver<grid>::minDefect( size_t max_d, uint64_t max_confl,
++	size_t& best_d, size_t& ring, bool& exact, patch_t *soln )
++{
++	best_d = SIZE_MAX;
++	ring = 0;
++	exact = false;
++	if ((level_ == 0) || !cloud_.surroundable_) {
++		return false;
++	}
++
++	CMSat::SATSolver solv;
++	solv.new_vars(next_var_);
++	point_map<coord_t, CMSat::Lit> relax;
++	getClauses(solv, true, &relax);
++
++	std::vector<CMSat::Lit> xs;
++	for (const auto& kv : relax) {
++		xs.push_back(kv.second);
++	}
++	std::vector<CMSat::Lit> outs = haloTotalizer(solv, xs, max_d + 1);
++
++	std::vector<CMSat::Lit> assume;
++	if (outs.size() > max_d) {
++		assume.push_back(~outs[max_d]);
++	}
++
++	while (true) {
++		solv.set_max_confl(max_confl);
++		CMSat::lbool r = solv.solve(&assume);
++		if (r == CMSat::l_True) {
++			const std::vector<CMSat::lbool>& model = solv.get_model();
++			// Which level is each used tile at?
++			point_map<coord_t, int> occ;	// cell -> level of the tile covering it
++			std::vector<std::pair<size_t, xform_t>> used;
++			for (const auto& ti : tiles_) {
++				for (auto v : ti.levelRange(0, level_ + 1)) {
++					if (model[v.second] == CMSat::l_True) {
++						used.emplace_back(v.first, ti.T_);
++						for (const auto& p : shape_) {
++							occ[ti.T_ * p] = (int)v.first;
++						}
++						break;
++					}
++				}
++			}
++			point_map<coord_t, bool> rset;
++			for (const auto& u : used) {
++				if (u.first + 1 != level_) {
++					continue;
++				}
++				for (const auto& p : cloud_.halo_) {
++					point_t tp = u.second * p;
++					auto it = occ.find(tp);
++					if ((it != occ.end()) && (it->second < (int)level_)) {
++						continue;	// part of the (L-1)-patch
++					}
++					rset[tp] = (it != occ.end());	// covered by corona L?
++				}
++			}
++			size_t d = 0;
++			for (const auto& kv : rset) {
++				if (!kv.second) {
++					++d;
++				}
++			}
++			if (d < best_d) {
++				best_d = d;
++				ring = rset.size();
++				if (soln) {
++					getSolution(solv, *soln);
++				}
++			}
++			if (best_d == 0) {
++				exact = true;
++				break;
++			}
++			assume.clear();
++			assume.push_back(~outs[best_d - 1]);	// at most best_d - 1
++		} else if (r == CMSat::l_False) {
++			exact = (best_d != SIZE_MAX);
++			break;
++		} else {
++			break;	// conflict budget exhausted: best_d is an upper bound
++		}
++	}
++	return best_d != SIZE_MAX;
++}
++
+ template<typename grid>
+ void HeeschSolver<grid>::getSolution( 
+ 	const CMSat::SATSolver& solv, patch_t& ret, size_t lev ) const
