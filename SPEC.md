@@ -22,7 +22,7 @@ level <a,b,c,d,e,f>      (N placement lines; affine map x' = a x + b y + c, y' =
 
 `hh` is the Heesch number when the outer corona may have holes (`hh = hc` or `hc + 1`). `P = 2` adds a second patch certifying `hh = hc + 1`. Only `hc` matters for acceptance.
 
-**Self-check before any claim:** `scripts/check_shape.sh FILE` must report `hc >= 7`, not inconclusive. A constraint checker (cells, spans, connectivity, holes) is to be added to `halo/` (see M2).
+**Self-check before any claim:** (1) `scripts/check_shape.sh FILE` must report `hc >= 7`, not inconclusive; (2) `python3 halo/shape.py FILE` (cells, spans, connectivity, holes) must say OK; (3) `python3 halo/verify.py WITNESS` (independent of heesch-sat) must PASS.
 
 **Publication:** no entry needed. Publish the shape, the witness, the exact checker commit and the commands to reproduce. Emailing math@epoch.ai to have it marked solved is optional. Also consider notifying Craig Kaplan.
 
@@ -118,7 +118,7 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - Anisohedral or aperiodic tilers come out "inconclusive". They are not records. They are also the most expensive shapes to check (§4).
 - **heesch-sat's maxlevel must be well above the target Heesch number.** Its corona loop builds patches *allowing holes* and removes holes only afterwards. "Inconclusive" therefore means "reached maxlevel coronas, possibly with holes", not "reached maxlevel hole-free coronas". In M1, 7 11-hexes were inconclusive at maxlevel 5 although Kaplan's tables (run at maxlevel 7) show 6 of them are non-tilers with Hc = 3 or 4. Consequences: (a) runs aiming at Hc = k need maxlevel ≥ k + 2 or so; (b) an inconclusive shape with no periodic tiling is a *candidate*, not a presumed tiler, and should be escalated to a higher maxlevel; (c) the Epoch verifier's maxlevel 12 could reject a genuine Hc ≥ 7 shape whose holey coronas reach 12. Check candidates for that before submitting. heesch.h also has a FIXME about maxlevel exactly one above the true Heesch number.
 - The span ambiguity in §1. Design to the stricter reading.
-- heesch-sat is experimental code. Cross-check any record with an independent check, e.g. re-verify the witness patch geometry with our own script.
+- heesch-sat is experimental code. Cross-check any record with an independent check: `halo/verify.py` re-verifies a witness patch from first principles (built 2026-10-25).
 
 ## 7. Decision log
 

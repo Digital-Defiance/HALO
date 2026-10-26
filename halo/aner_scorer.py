@@ -26,7 +26,7 @@ Usage (on the Mac, from the HALO folder):
 
 Library use (e.g. from search.py):
   from aner_scorer import Scorer
-  sc = Scorer("results/models/scorer_hex11_b8.npz", schedule="split")   # or "ane", "gpu", "numpy"
+  sc = Scorer("results/models/scorer_hex11_b8.npz", schedule="ane")   # or "split", "gpu", "mlx", "numpy"
   out = sc.score(X)   # X: (N, 256) float32 -> (N, 2): [tile logit, hc estimate]
 """
 import argparse
@@ -153,13 +153,33 @@ def compile_schedule(g, name, spatial=64):
 
 
 class Scorer:
-    """Batch scorer on ANER (schedule 'split', 'ane' or 'gpu') with a NumPy fallback."""
+    """Batch scorer: ANER (schedule 'ane', 'gpu' or 'split'), MLX on the GPU ('mlx', fp16),
+    or NumPy on the CPU ('numpy'). Falls back to NumPy if the chosen backend is unavailable."""
 
-    def __init__(self, weights, schedule="split"):
+    def __init__(self, weights, schedule="ane"):
         self.W, self.blocks, self.window = load_weights(weights)
         self.schedule = schedule
         self.prog = None
-        if schedule != "numpy":
+        self.mlx_fwd = None
+        if schedule == "mlx":
+            try:
+                import mlx.core as mx
+                Wm = {k: mx.array(v).astype(mx.float16) for k, v in self.W.items()}
+                blocks = self.blocks
+
+                def fwd(x):
+                    a = lambda z: z * mx.sigmoid(S * z)  # noqa: E731
+                    h = a(x @ Wm["inp.weight"].T + Wm["inp.bias"])
+                    for i in range(blocks):
+                        t = a(h @ Wm[f"blocks.{i}.l1.weight"].T + Wm[f"blocks.{i}.l1.bias"])
+                        h = h + t @ Wm[f"blocks.{i}.l2.weight"].T + Wm[f"blocks.{i}.l2.bias"]
+                    return h @ Wm["head.weight"].T + Wm["head.bias"]
+
+                self._mx = mx
+                self.mlx_fwd = mx.compile(fwd)
+            except Exception as exc:
+                print(f"Scorer: MLX unavailable ({exc}); using NumPy", file=sys.stderr)
+        elif schedule != "numpy":
             try:
                 self.graph = build_graph(self.W, self.blocks)
                 self.prog, _ = compile_schedule(self.graph, schedule)
@@ -169,6 +189,8 @@ class Scorer:
 
     @property
     def backend(self):
+        if self.mlx_fwd is not None:
+            return "mlx-gpu-fp16"
         if self.prog is None:
             return "numpy"
         parts = [n for n, on in (("ane", self.prog.uses_neural_engine),
@@ -177,6 +199,10 @@ class Scorer:
 
     def score(self, X):
         X = np.ascontiguousarray(X, dtype=np.float32)
+        if self.mlx_fwd is not None:
+            mx = self._mx
+            out = self.mlx_fwd(mx.array(X).astype(mx.float16))
+            return np.array(out.astype(mx.float32))
         if self.prog is None:
             return numpy_forward(self.W, self.blocks, X)
         n = len(X)

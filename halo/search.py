@@ -13,6 +13,10 @@ Usage (native macOS run, all cores):
   python3 halo/search.py --seeds results/hex11.jsonl --seed-min-hc 3 --log results/search_hex.jsonl \
       --max-cells 40 --maxlevel 7 --hours 8
 
+With the learned scorer as a prefilter (ANER on Neural Engine + GPU):
+  PYTHONPATH=/Volumes/Code/ANER/python python3 halo/search.py --seeds results/hex11.jsonl --seed-min-hc 3 \
+      --log results/search_hex.jsonl --scorer results/models/scorer_hex11_b8.npz --hours 8
+
 Square and hex grids only (mutation needs grid adjacency).
 """
 import argparse
@@ -25,6 +29,8 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
+
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runner  # noqa: E402
@@ -60,22 +66,30 @@ def mutate(grid, cells, rng, steps):
     return sorted(s), "+".join(ops)
 
 
+PREFER_MIN_CELLS = 0  # set from --prefer-min-cells
+
+
 def fitness(rec):
-    """Sort key: higher is better. Non-tilers by hc, then hh, then checker time at the deciding level."""
+    """Sort key: higher is better. Non-tilers by hc, then (optionally) size in unexplored territory,
+    then hh, then checker time at the deciding level."""
     if rec.get("status") != "nontiler" or rec.get("hc") is None:
-        return (-1, -1, 0.0)
-    return (rec["hc"], rec.get("hh") or rec["hc"], min(rec.get("seconds", 0.0), 600.0))
+        return (-1, 0, -1, 0.0)
+    big = 1 if PREFER_MIN_CELLS and (rec.get("cells") or 0) >= PREFER_MIN_CELLS else 0
+    return (rec["hc"], big, rec.get("hh") or rec["hc"], min(rec.get("seconds", 0.0), 600.0))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--seeds", required=True, help="runner JSONL (or text file of shape lines)")
+    ap.add_argument("--seeds", required=True, help="runner JSONL or text file(s) of shape lines, comma-separated")
     ap.add_argument("--seed-min-hc", type=int, default=3)
     ap.add_argument("--log", required=True)
     ap.add_argument("--grid", default="", help="restrict to one grid (O or H); default: from seeds")
     ap.add_argument("--max-cells", type=int, default=40)
     ap.add_argument("--min-cells", type=int, default=4)
     ap.add_argument("--elite", type=int, default=64, help="parents are drawn from the top-N archive")
+    ap.add_argument("--prefer-min-cells", type=int, default=0,
+                    help="among equal hc, prefer shapes with at least this many cells (e.g. 18 for hexes: "
+                         "Kaplan enumerated all polyhexes up to 17 cells, max Hc 4)")
     ap.add_argument("--explore", type=float, default=0.1, help="chance to pick a random archived parent")
     ap.add_argument("--hours", type=float, default=1.0)
     ap.add_argument("--max-evals", type=int, default=0)
@@ -92,8 +106,19 @@ def main():
     ap.add_argument("--periodic-max-t", type=int, default=24)
     ap.add_argument("--escalate-maxlevel", type=int, default=9,
                     help="re-check inconclusive shapes with no periodic tiling at this maxlevel")
+    # learned scorer prefilter (Track D)
+    ap.add_argument("--scorer", default="", help="scorer weights (.npz from scorer.py); enables the prefilter")
+    ap.add_argument("--scorer-schedule", default="ane", choices=["ane", "split", "gpu", "mlx", "numpy"],
+                    help="where to run the scorer. Default ane: the Neural Engine alone is ~8x more than the "
+                         "search needs and leaves the GPU free for retraining (mlx = GPU via MLX fp16)")
+    ap.add_argument("--candidates", type=int, default=2048, help="mutants generated and scored per refill")
+    ap.add_argument("--pick", type=int, default=32, help="best-scoring mutants queued for checking per refill")
+    ap.add_argument("--random-frac", type=float, default=0.1,
+                    help="fraction of checks given to unscored random mutants (keeps the scorer honest)")
     args = ap.parse_args()
     rng = random.Random(args.seed)
+    global PREFER_MIN_CELLS
+    PREFER_MIN_CELLS = args.prefer_min_cells
 
     archive = {}  # canonical line -> record
     if os.path.exists(args.log):
@@ -107,12 +132,13 @@ def main():
     print(f"resumed {len(archive)} shapes from {args.log}" if archive else "fresh run", flush=True)
 
     seeds = []
-    with open(args.seeds) as fh:
+    for seed_path in args.seeds.split(","):
+      with open(seed_path) as fh:
         for ln in fh:
             ln = ln.strip()
             if not ln:
                 continue
-            if args.seeds.endswith(".jsonl"):
+            if seed_path.endswith(".jsonl"):
                 r = json.loads(ln)
                 if r.get("status") == "nontiler" and (r.get("hc") or 0) >= args.seed_min_hc:
                     seeds.append(r)
@@ -147,7 +173,8 @@ def main():
         live.sort(key=fitness, reverse=True)
         return rng.choice(live[: args.elite])
 
-    def propose():
+    def gen_candidate(exclude=()):
+        """A new valid mutant (canon, parent canon, op), not yet in the archive; None if stuck."""
         for _ in range(200):
             parent = pick_parent()
             if parent is None:
@@ -161,12 +188,71 @@ def main():
             if not ok or any("stricter" in p for p in problems):
                 continue
             canon = shp.canonical(g, new)
-            with lock:
+            if canon in archive or canon in exclude:
+                continue
+            return canon, parent["canon"], op
+        return None
+
+    def propose():
+        """An unscored random mutant, marked pending."""
+        c = gen_candidate()
+        if c is None:
+            return None
+        with lock:
+            archive[c[0]] = {"canon": c[0], "status": "pending"}
+        return c + (None,)
+
+    sc = None
+    if args.scorer:
+        import aner_scorer
+        import scorer as scorer_mod
+        sc = aner_scorer.Scorer(args.scorer, args.scorer_schedule)
+        print(f"scorer: {args.scorer} on {sc.backend}; {args.candidates} candidates -> best {args.pick} "
+              f"per refill, {args.random_frac:.0%} random checks", flush=True)
+    queue = []  # list of (pred, canon, parent, op), best first
+
+    def refill():
+        cands = {}
+        for _ in range(args.candidates * 3):
+            if len(cands) >= args.candidates:
+                break
+            c = gen_candidate(exclude=cands)
+            if c is None:
+                break
+            cands[c[0]] = c
+        feats, owner = [], []
+        for canon in cands:
+            ims = scorer_mod.images(canon)
+            for v in ims:
+                feats.append(v)
+                owner.append(canon)
+        if not feats:
+            return
+        out = sc.score(np.stack(feats))
+        tot, cnt = {}, {}
+        for (tile, hc_hat), canon in zip(out, owner):
+            v = float(hc_hat) * (1.0 - 1.0 / (1.0 + math.exp(-float(tile))))
+            tot[canon] = tot.get(canon, 0.0) + v
+            cnt[canon] = cnt.get(canon, 0) + 1
+        ranked = sorted(((tot[c] / cnt[c], c) for c in tot), reverse=True)[: args.pick]
+        with lock:
+            for pred, canon in ranked:
                 if canon in archive:
                     continue
                 archive[canon] = {"canon": canon, "status": "pending"}
-            return canon, parent["canon"], op
-        return None
+                _, parent, op = cands[canon]
+                queue.append((pred, canon, parent, op))
+        queue.sort(key=lambda q: -q[0])
+
+    def next_job():
+        if sc is None or rng.random() < args.random_frac:
+            return propose()
+        if not queue:
+            refill()
+        if not queue:
+            return propose()
+        pred, canon, parent, op = queue.pop(0)
+        return canon, parent, op, pred
 
     with open(args.log, "a") as logfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
         running = {}
@@ -174,23 +260,24 @@ def main():
         while True:
             stop = time.monotonic() > deadline or (args.max_evals and evals >= args.max_evals)
             while not stop and len(running) < args.jobs:
-                prop = propose()
+                prop = next_job()
                 if prop is None:
                     break
-                canon, parent, op = prop
-                running[pool.submit(runner.classify, canon, args, workdir)] = (canon, parent, op)
+                canon, parent, op, pred = prop
+                running[pool.submit(runner.classify, canon, args, workdir)] = (canon, parent, op, pred)
             if not running:
                 break
             done, _ = wait(list(running), return_when=FIRST_COMPLETED)
             for fut in done:
-                canon, parent, op = running.pop(fut)
+                canon, parent, op, pred = running.pop(fut)
                 try:
                     rec = fut.result()
                 except Exception as exc:
                     rec = {"status": "error", "hc": None, "hh": None, "stderr": repr(exc)}
                 record = rec.pop("record", None)
                 row = {"canon": canon, "shape": canon, "grid": grid, "cells": (len(canon.split()) - 1) // 2,
-                       "parent": parent, "op": op, "generator": "search", "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+                       "parent": parent, "op": op, "generator": "search-scored" if pred is not None else "search",
+                       "pred": None if pred is None else round(pred, 4), "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 row.update(rec)
                 if row["status"] == "nontiler" and (row["hc"] or 0) >= 3:
                     row["witness"] = record
@@ -211,6 +298,14 @@ def main():
                     rate = evals / (time.monotonic() - t0)
                     print(f"  {evals} evals, {rate:.1f}/s, archive {len(archive)}, non-tilers by hc: "
                           + ", ".join(f"{k}:{v}" for k, v in sorted(hist.items())), flush=True)
+                    if sc is not None:
+                        for gen in ("search-scored", "search"):
+                            rs = [r for r in archive.values() if r.get("generator") == gen and "status" in r
+                                  and r["status"] != "pending"]
+                            if rs:
+                                good = sum(1 for r in rs if r.get("status") == "nontiler" and (r.get("hc") or 0) >= 2)
+                                print(f"     {gen:13s}: {len(rs)} checked, {good} with hc>=2 ({100*good/len(rs):.1f}%)",
+                                      flush=True)
     print(f"done: {evals} evaluations; best hc={best_seen[0]}")
     top = sorted((r for r in archive.values() if r.get("status") == "nontiler"), key=fitness, reverse=True)[:10]
     for r in top:
