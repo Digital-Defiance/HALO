@@ -143,7 +143,8 @@ def main():
                     help="relaxation mode(s), comma-separated, taking turns: cell, splat")
     ap.add_argument("--relax-backend", default="auto", choices=["auto", "mlx", "numpy"],
                     help="gradient backend (auto: MLX on the GPU if installed, else NumPy on the CPU)")
-    ap.add_argument("--relax-parents", type=int, default=4, help="elite parents relaxed per relaxation refill")
+    ap.add_argument("--relax-parents", type=int, default=16,
+                    help="elite parents relaxed together (one batched scorer call per step) per refill")
     ap.add_argument("--relax-rounds", type=int, default=6)
     ap.add_argument("--relax-steps", type=int, default=30)
     ap.add_argument("--relax-max-flips", type=int, default=4, help="cells changed per relaxation round, at most")
@@ -326,11 +327,9 @@ def main():
         rx = relaxers[relax_turn[0] % len(relaxers)]
         relax_turn[0] += 1
         made = []
-        for _ in range(args.relax_parents):
-            parent = pick_parent()
-            if parent is None:
-                break
-            for canon, info in rx.relax(parent["canon"], nrng, exclude=archive):
+        parents = [p for p in (pick_parent() for _ in range(args.relax_parents)) if p is not None]
+        for parent, res in zip(parents, rx.relax_many([p["canon"] for p in parents], nrng, exclude=archive)):
+            for canon, info in res:
                 op = f"relax-{rx.mode}:r{info['round']}+{info['dist']}"
                 made.append((canon, parent["canon"], op))
         preds = predict([m[0] for m in made])

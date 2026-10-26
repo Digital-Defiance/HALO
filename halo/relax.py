@@ -245,15 +245,27 @@ class Relaxer:
         return hc
 
     def objective(self, p, maps):
-        """Mean predicted hc over the images of soft occupancy p (over canvas C), and d/dp."""
-        X = np.zeros((len(maps), self.g.inputs), np.float32)
-        for k, (pos, src) in enumerate(maps):
-            X[k, pos] = p[src]
-        hc, gX = self.g(X)
-        gp = np.zeros(len(p))
-        for k, (pos, src) in enumerate(maps):
-            gp[src] += gX[k, pos]
-        return float(hc.mean()), gp / len(maps)
+        """Mean objective over the images of soft occupancy p (over canvas C), and d/dp."""
+        return self.objectives([p], [maps])[0]
+
+    def objectives(self, ps, maps_list):
+        """objective() for several soft shapes with one scorer call."""
+        X = np.zeros((sum(len(m) for m in maps_list), self.g.inputs), np.float32)
+        k = 0
+        for p, maps in zip(ps, maps_list):
+            for pos, src in maps:
+                X[k, pos] = p[src]
+                k += 1
+        val, gX = self.g(X)
+        out, k = [], 0
+        for p, maps in zip(ps, maps_list):
+            gp = np.zeros(len(p))
+            for i, (pos, src) in enumerate(maps):
+                gp[src] += gX[k + i, pos]
+            n = len(maps)
+            out.append((float(val[k:k + n].mean()), gp / n))
+            k += n
+        return out
 
     def penalties(self, p, lo, hi):
         """Gradient of the regularisers (to add to the objective gradient): push occupancies
@@ -290,90 +302,122 @@ class Relaxer:
         gal = (gq * e * a * (1.0 - a)).sum(1)
         return gmu, gls, gal
 
-    # --- main loop -------------------------------------------------------------------------
+    # --- main loop: several shapes relax in lockstep, one batched scorer call per step ------
     def relax(self, line, rng, exclude=()):
         """Relax one shape. Returns [(canonical line, info)], distinct, new, valid, in order found."""
+        return self.relax_many([line], rng, exclude)[0]
+
+    def relax_many(self, lines, rng, exclude=()):
+        """Relax several shapes together. One scorer call per step covers all their images, which
+        costs about the same as one shape's (small batches are latency-bound). Returns one list
+        per input line of [(canonical line, info)]."""
+        jobs = [self._start(line, rng) for line in lines]
+        alive = list(jobs)
+        for rnd in range(self.rounds):
+            alive = [j for j in alive if self._setup_round(j, rng)]
+            if not alive:
+                break
+            Js = [None] * len(alive)
+            for _ in range(self.steps):
+                ps = [self._field(j) for j in alive]
+                res = self.objectives(ps, [j["maps"] for j in alive])
+                for i, (j, p, (J, gp)) in enumerate(zip(alive, ps, res)):
+                    Js[i] = J
+                    self._step(j, p, gp)
+            for j, J in zip(alive, Js):
+                self._finish_round(j, rnd, J, exclude)
+        return [j["out"] for j in jobs]
+
+    def _start(self, line, rng):
         grid, cells = shp.parse(line)
-        # Size band around the starting shape. Unconstrained, relaxation shrinks shapes into
-        # sizes the scorer never saw (4-9 cells), where it predicts hc ~3 with confidence.
-        lo = max(self.min_cells, len(cells) - self.shrink)
-        hi = min(self.max_cells, len(cells) + self.grow)
-        cur = set(cells)
-        start = set(cells)
-        seen = {shp.canonical(grid, cells)}
-        out = []
+        j = {"grid": grid, "cur": set(cells), "start": set(cells), "seen": {shp.canonical(grid, cells)}, "out": [],
+             # Size band around the starting shape. Unconstrained, relaxation shrinks shapes into
+             # sizes the scorer never saw (4-9 cells), where it predicts hc ~3 with confidence.
+             "lo": max(self.min_cells, len(cells) - self.shrink),
+             "hi": min(self.max_cells, len(cells) + self.grow)}
         if self.mode == "cell":
-            z = {}
+            j["z"] = {}
         else:
             K = len(cells)
-            mu = np.array([centre(grid, x, y) for x, y in cells]) + rng.normal(0.0, 0.05, (K, 2))
-            ls = np.full(K, math.log(self.sigma0))
-            al = np.full(K, math.log(self.amp0 / (1.0 - self.amp0)))
-            opt = (Adam(mu.shape, self.lr_mu), Adam(K, self.lr_sigma), Adam(K, self.lr_amp))
-        for rnd in range(self.rounds):
-            C = grow(grid, cur, self.ring)
-            maps = self.maps(grid, sorted(cur), C)
-            if not maps:
-                break
-            if self.mode == "cell":
-                for c in C:
-                    if c not in z:
-                        z[c] = (2.0 if c in cur else -2.0) + rng.normal(0.0, 0.3)
-                zc = np.array([z[c] for c in C])
-                opt_c = Adam(len(C), self.lr_cell)
+            j["mu"] = np.array([centre(grid, x, y) for x, y in cells]) + rng.normal(0.0, 0.05, (K, 2))
+            j["ls"] = np.full(K, math.log(self.sigma0))
+            j["al"] = np.full(K, math.log(self.amp0 / (1.0 - self.amp0)))
+            j["opt"] = (Adam((K, 2), self.lr_mu), Adam(K, self.lr_sigma), Adam(K, self.lr_amp))
+        return j
+
+    def _setup_round(self, j, rng):
+        """Canvas and image maps for this round; False if the shape fits no orientation."""
+        grid, cur = j["grid"], j["cur"]
+        C = grow(grid, cur, self.ring)
+        maps = self.maps(grid, sorted(cur), C)
+        if not maps:
+            return False
+        j["C"], j["maps"] = C, maps
+        if self.mode == "cell":
+            z = j["z"]
+            for c in C:
+                if c not in z:
+                    z[c] = (2.0 if c in cur else -2.0) + rng.normal(0.0, 0.3)
+            j["zc"] = np.array([z[c] for c in C])
+            j["opt_c"] = Adam(len(C), self.lr_cell)
+        else:
+            j["R"] = np.array([centre(grid, x, y) for x, y in C])
+        return True
+
+    def _field(self, j):
+        if self.mode == "cell":
+            j["parts"] = None
+            return sigmoid(j["zc"])
+        p, j["parts"] = self.splat_field(j["R"], j["mu"], j["ls"], j["al"])
+        return p
+
+    def _step(self, j, p, gp):
+        gp = gp + self.penalties(p, j["lo"], j["hi"])
+        if self.mode == "cell":
+            j["zc"] += j["opt_c"].step(gp * p * (1.0 - p))
+        else:
+            gmu, gls, gal = self.splat_backward(gp, j["parts"])
+            opt = j["opt"]
+            j["mu"] += opt[0].step(gmu)
+            j["ls"] = np.clip(j["ls"] + opt[1].step(gls), math.log(0.3), math.log(1.5))
+            j["al"] = np.clip(j["al"] + opt[2].step(gal), -6.0, 6.0)
+
+    def _finish_round(self, j, rnd, J, exclude):
+        """Snap (at most max_flips changes), repair, validate; record the shape if it is new."""
+        grid, cur, C = j["grid"], j["cur"], j["C"]
+        if self.mode == "cell":
+            for c, v in zip(C, j["zc"]):
+                j["z"][c] = v
+        p = self._field(j)
+        inside = np.array([c in cur for c in C])
+        want = p > 0.5
+        changed = np.where(want != inside)[0]
+        if len(changed) == 0:
+            return
+        flips = changed[np.argsort(-np.abs(p[changed] - 0.5))][: self.max_flips]
+        new = set(cur)
+        for i in flips:
+            if want[i]:
+                new.add(C[i])
             else:
-                R = np.array([centre(grid, x, y) for x, y in C])
-            J = None
-            for _ in range(self.steps):
-                if self.mode == "cell":
-                    p = sigmoid(zc)
-                    J, gp = self.objective(p, maps)
-                    gp += self.penalties(p, lo, hi)
-                    zc += opt_c.step(gp * p * (1.0 - p))
-                else:
-                    p, parts = self.splat_field(R, mu, ls, al)
-                    J, gp = self.objective(p, maps)
-                    gp += self.penalties(p, lo, hi)
-                    gmu, gls, gal = self.splat_backward(gp, parts)
-                    mu += opt[0].step(gmu)
-                    ls = np.clip(ls + opt[1].step(gls), math.log(0.3), math.log(1.5))
-                    al = np.clip(al + opt[2].step(gal), -6.0, 6.0)
-            if self.mode == "cell":
-                for c, v in zip(C, zc):
-                    z[c] = v
-                p = sigmoid(zc)
-            else:
-                p, _ = self.splat_field(R, mu, ls, al)
-            inside = np.array([c in cur for c in C])
-            want = p > 0.5
-            changed = np.where(want != inside)[0]
-            if len(changed) == 0:
-                continue
-            flips = changed[np.argsort(-np.abs(p[changed] - 0.5))][: self.max_flips]
-            new = set(cur)
-            for j in flips:
-                if want[j]:
-                    new.add(C[j])
-                else:
-                    new.discard(C[j])
-            rep = repair(grid, new)
-            # reject snaps outside the size band, or where repair threw away a detached piece
-            if rep is None or not (lo <= len(rep) <= hi) or len(rep) < len(new) - 1:
-                continue
-            ok, problems, _ = shp.check(shp.fmt(grid, rep))
-            if not ok or any("stricter" in q for q in problems):
-                continue
-            if self.mode == "cell":  # keep the logits consistent with what repair kept or filled
-                for c in set(rep) ^ new:
-                    z[c] = 1.0 if c in rep else -1.0
-            cur = set(rep)
-            canon = shp.canonical(grid, rep)
-            if canon in seen or canon in exclude:
-                continue
-            seen.add(canon)
-            out.append((canon, {"round": rnd + 1, "flips": int(len(flips)), "soft_hc": round(J, 4),
-                                "dist": len(cur ^ start), "cells": len(cur)}))
-        return out
+                new.discard(C[i])
+        rep = repair(grid, new)
+        # reject snaps outside the size band, or where repair threw away a detached piece
+        if rep is None or not (j["lo"] <= len(rep) <= j["hi"]) or len(rep) < len(new) - 1:
+            return
+        ok, problems, _ = shp.check(shp.fmt(grid, rep))
+        if not ok or any("stricter" in q for q in problems):
+            return
+        if self.mode == "cell":  # keep the logits consistent with what repair kept or filled
+            for c in set(rep) ^ new:
+                j["z"][c] = 1.0 if c in rep else -1.0
+        j["cur"] = set(rep)
+        canon = shp.canonical(grid, rep)
+        if canon in j["seen"] or canon in exclude:
+            return
+        j["seen"].add(canon)
+        j["out"].append((canon, {"round": rnd + 1, "flips": int(len(flips)), "soft_hc": round(J, 4),
+                                 "dist": len(j["cur"] ^ j["start"]), "cells": len(j["cur"])}))
 
 
 def selftest(weights):
