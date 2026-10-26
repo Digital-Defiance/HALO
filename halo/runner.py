@@ -26,6 +26,7 @@ Works on macOS and Linux. Python 3.8+, standard library only (psutil used if pre
 """
 import argparse
 import collections
+import contextlib
 import json
 import os
 import platform
@@ -55,6 +56,88 @@ try:
     import psutil  # optional
 except ImportError:  # pragma: no cover
     psutil = None
+
+
+class MemoryBudget:
+    """Cooperative RSS guard for this runner's SAT and defect processes.
+
+    Only a selected process stops itself, so pressure does not make every
+    worker kill its solver at once. Low-priority defect work goes first, then
+    ordinary checks, preserving larger-budget retries where possible. This is
+    sampled admission/termination control, not an OS-enforced hard RAM limit.
+    """
+    def __init__(self, limit_mb, reserve_mb=0, available=None):
+        self.limit_mb = limit_mb
+        self.reserve_mb = reserve_mb
+        self._available = available or self._system_available
+        self._available_mb = None
+        self._poll_at = float("-inf")
+        self._processes = {}
+        self._stopping = None
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _system_available():
+        return psutil.virtual_memory().available / 1e6 if psutil else None
+
+    def register(self, pid, priority=0):
+        with self._lock:
+            self._processes[pid] = {"rss": 0.0, "priority": priority}
+
+    def unregister(self, pid):
+        with self._lock:
+            self._processes.pop(pid, None)
+            if self._stopping == pid:
+                self._stopping = None
+
+    def _pressure(self):
+        now = time.monotonic()
+        if now - self._poll_at >= 0.1:
+            self._poll_at = now
+            try:
+                self._available_mb = self._available()
+            except Exception:
+                self._available_mb = None
+        if sum(p["rss"] for p in self._processes.values()) > self.limit_mb:
+            return "shared-memory-budget"
+        if self._available_mb is not None and self._available_mb < self.reserve_mb:
+            return "system-memory-reserve"
+        return None
+
+    def may_start(self):
+        with self._lock:
+            return self._stopping is None and self._pressure() is None
+
+    def stop_reason(self, pid, rss):
+        with self._lock:
+            if pid not in self._processes:
+                return None
+            if rss is not None:
+                self._processes[pid]["rss"] = rss
+            reason = self._pressure()
+            if reason is None or self._stopping is not None:
+                return None
+            priority = min(p["priority"] for p in self._processes.values())
+            victim = max((i for i, p in self._processes.items() if p["priority"] == priority),
+                         key=lambda i: self._processes[i]["rss"])
+            if victim == pid:
+                self._stopping = pid
+                return reason
+            return None
+
+
+MEMORY_BUDGET = None
+
+
+@contextlib.contextmanager
+def use_memory_budget(budget):
+    global MEMORY_BUDGET
+    previous = MEMORY_BUDGET
+    MEMORY_BUDGET = budget
+    try:
+        yield
+    finally:
+        MEMORY_BUDGET = previous
 
 
 def rss_mb(pid):
@@ -124,13 +207,24 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
     # enables posix_spawn on macOS instead of fork's OpenBLAS atfork handlers,
     # which can deadlock against a concurrently running NumPy scorer.
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, close_fds=False)
+    budget = MEMORY_BUDGET
+    if budget:
+        budget.register(proc.pid, priority=mem_mb)
     peak = 0.0
     stop = None
+    limit_reason = None
     while proc.poll() is None:
         r = rss_mb(proc.pid)
         if r is not None:
             peak = max(peak, r)
             if r > mem_mb:
+                stop = "memout"
+                limit_reason = "per-process-memory"
+                proc.kill()
+                break
+        if budget:
+            limit_reason = budget.stop_reason(proc.pid, r)
+            if limit_reason:
                 stop = "memout"
                 proc.kill()
                 break
@@ -147,6 +241,8 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
         except subprocess.TimeoutExpired:
             pass
     proc.wait()
+    if budget:
+        budget.unregister(proc.pid)
     secs = time.monotonic() - start
     stderr = proc.stderr.read().decode(errors="replace")[-500:] if proc.stderr else ""
     if proc.stderr:
@@ -168,6 +264,8 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
         rec = parse_output(text)
     rec.update({"seconds": round(secs, 4), "peak_rss_mb": round(peak, 1),
                 "maxlevel": maxlevel, "stop": stop})
+    if limit_reason:
+        rec["limit_reason"] = limit_reason
     return rec
 
 
@@ -187,6 +285,9 @@ def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=6
     start = time.monotonic()
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True, close_fds=False)
+    budget = MEMORY_BUDGET
+    if budget:
+        budget.register(proc.pid, priority=-1)  # enrichment yields before classification
     out_box = {}
 
     def feed():
@@ -196,12 +297,19 @@ def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=6
             out_box["out"] = ""
     t = threading.Thread(target=feed, daemon=True)
     t.start()
-    stop, peak = None, 0.0
+    stop, peak, limit_reason = None, 0.0, None
     while t.is_alive():
         r = rss_mb(proc.pid)
         if r is not None:
             peak = max(peak, r)
             if r > mem_mb:
+                stop = "memout"
+                limit_reason = "per-process-memory"
+                proc.kill()
+                break
+        if budget:
+            limit_reason = budget.stop_reason(proc.pid, r)
+            if limit_reason:
                 stop = "memout"
                 proc.kill()
                 break
@@ -211,9 +319,13 @@ def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=6
             break
         t.join(0.25)
     t.join(5)
+    if budget:
+        budget.unregister(proc.pid)
     secs = round(time.monotonic() - start, 3)
     rec = {"defect": None, "ring": None, "defect_exact": False, "defect_seconds": secs,
            "defect_peak_rss_mb": round(peak, 1), "defect_stop": stop}
+    if limit_reason:
+        rec["defect_limit_reason"] = limit_reason
     if stop:
         return rec
     try:

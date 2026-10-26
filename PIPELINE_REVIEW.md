@@ -210,3 +210,37 @@ generation cost and checker cost, and retain a guided probe budget.
 The already-running process retains its old guard and disabled state. Restoring
 its scorer requires restarting with the updated launcher; no rebuild or new
 hardware benchmark is needed. The active archive is left to append normally.
+
+## Progress and memory controls
+
+The hours option is a generation time budget for an open-ended search, not an
+ETA to exhaust the shape space or discover Hc>=7. Labels now distinguish search
+budget, new-check stop time, an optional evaluation limit, and rough sweep
+backlog time. Checks already running may finish after the submission deadline.
+The retry display names memory/time/search-bound stops as unresolved instead of
+printing `hc=None`; machine-readable nulls remain unchanged.
+
+The former profile allowed 14 ordinary checks at 3,000 MB and two retries at
+10,000 MB: up to 62 GB of classification RSS before other work. Defect scoring
+has its own higher per-worker cap. That was an aggregate risk even though most
+ordinary checks are small. A native sample during the review showed roughly
+49 GB system-available and 4.3 GB resident for the running HALO parent/children,
+so there was room for a larger individual retry, not a reason to raise every cap.
+
+The next launcher retains 14 ordinary workers at 3,000 MB, uses one retry at
+20,000 MB, and enables a cooperative 48,000 MB RSS budget over registered SAT
+and defect processes plus an 8,000 MB system-available reserve. New dispatch
+pauses under pressure. A selected process stops itself, avoiding simultaneous
+mass cancellation; lower-priority defect work yields before ordinary checks,
+and larger-budget retries are preserved where possible. Resource stops keep an
+unresolved status and include `limit_reason`, and defect stops retain the known
+Hc classification. Periodic probes and Python/GPU allocations are not in the
+tracked RSS sum, but system headroom reflects their memory use.
+
+This is sampled admission/termination control, not a hard OS memory limit:
+allocations between polls can overshoot, and system-available estimates vary.
+21 regression tests cover shared pressure, headroom recovery, prioritization,
+cleanup and unresolved results. A real checker stopped promptly under a tiny
+16 MB test budget with `hc: null` and `shared-memory-budget` recorded. The native
+150-evaluation launcher smoke test exercises the enabled guard without changing
+the production archive. These memory/progress changes apply on the next launch.

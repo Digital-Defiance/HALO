@@ -141,6 +141,11 @@ def main():
     ap.add_argument("--timeout", type=float, default=10.0)
     ap.add_argument("--timeout-long", type=float, default=300.0)
     ap.add_argument("--mem-mb", type=float, default=3000.0)
+    ap.add_argument("--memory-budget-mb", type=float, default=0.0,
+                    help="shared sampled RSS budget for SAT and defect processes; 0 = off")
+    ap.add_argument("--memory-reserve-mb", type=float, default=8000.0,
+                    help="when a shared budget is enabled, pause new checks and stop a selected checker "
+                         "if system available RAM falls below this reserve")
     ap.add_argument("--periodic-budget", type=float, default=30.0)
     ap.add_argument("--periodic-quick", type=float, default=3.0)
     ap.add_argument("--periodic-max-t", type=int, default=24)
@@ -223,6 +228,8 @@ def main():
         ap.error("--hours, --candidates and --pick must be positive; --max-evals must be nonnegative")
     if args.guard_checks < 0 or not math.isfinite(args.guard_ratio) or args.guard_ratio < 0:
         ap.error("--guard-checks and --guard-ratio must be nonnegative, with a finite ratio")
+    if any(not math.isfinite(x) or x < 0 for x in (args.memory_budget_mb, args.memory_reserve_mb)):
+        ap.error("memory budget and reserve must be finite and nonnegative")
     if any(not 0 <= x <= 1 for x in (args.explore, args.sweep_frac, args.random_frac, args.relax_frac)):
         ap.error("generator fractions and --explore must be between 0 and 1")
     rng = random.Random(args.seed)
@@ -292,6 +299,14 @@ def main():
     workdir = tempfile.mkdtemp(prefix="halo_search_")
     lock = threading.Lock()
     deadline = time.monotonic() + args.hours * 3600
+    print(f"open-ended search; new-check time budget {fmt_dur(args.hours * 3600)}"
+          + (f", evaluation limit {args.max_evals:,}" if args.max_evals else ", no fixed evaluation count"), flush=True)
+    memory_budget = (runner.MemoryBudget(args.memory_budget_mb, args.memory_reserve_mb)
+                     if args.memory_budget_mb else None)
+    if memory_budget:
+        print(f"memory guard: sampled SAT/defect RSS budget {args.memory_budget_mb:.0f} MB, "
+              f"system available reserve {args.memory_reserve_mb:.0f} MB; "
+              f"{args.retry_jobs} retry worker(s), up to {args.retry_mem_mb:.0f} MB each", flush=True)
     evals = 0
     best_seen = max((fitness(r) for r in archive.values()), default=(-1, -1, 0))
     print(f"best so far: hc={best_seen[0]}", flush=True)
@@ -664,33 +679,43 @@ def main():
     if args.retry_jobs and args.retry_archived:
         for r in list(archive.values()):
             if r.get("status") in ("memout", "timeout") and args.min_cells <= ncells(r) <= args.max_cells:
-                first = {k: r.get(k) for k in ("status", "seconds", "total_seconds", "peak_rss_mb") if k in r}
+                first = {k: r.get(k) for k in ("status", "seconds", "total_seconds", "peak_rss_mb", "limit_reason") if k in r}
                 retry_q.append((r["canon"], r.get("parent"), r.get("op") or "", r.get("pred"), first))
         print(f"re-checking {len(retry_q)} archived memout/timeout shapes with {args.retry_mem_mb:.0f} MB", flush=True)
 
-    with open(args.log, "a") as logfh, \
+    with runner.use_memory_budget(memory_budget), open(args.log, "a") as logfh, \
             ThreadPoolExecutor(max_workers=1) as proposal_pool, \
             ThreadPoolExecutor(max_workers=args.jobs + args.retry_jobs) as pool, \
             contextlib.ExitStack() as cleanup:
         cleanup.callback(producer_stop.set)
         running = {}  # future -> (canon, parent, op, pred, first result if this is a retry else None)
         n_retry = 0
+        memory_waiting = False
         t0 = time.monotonic()
         while True:
             stop = time.monotonic() > deadline or (args.max_evals and evals >= args.max_evals)
             while (not stop and retry_q and n_retry < args.retry_jobs
+                   and (memory_budget is None or memory_budget.may_start())
                    and (not args.max_evals or evals + len(running) < args.max_evals)):
                 item = retry_q.popleft()
                 running[pool.submit(check, item[0], retry_opts)] = item
                 n_retry += 1
             while (not stop and time.monotonic() <= deadline and len(running) - n_retry < args.jobs
+                   and (memory_budget is None or memory_budget.may_start())
                    and (not args.max_evals or evals + len(running) + len(retry_q) < args.max_evals)):
                 prop = next_job()
                 if prop is None:
                     break
                 canon, parent, op, pred = prop
+                memory_waiting = False
                 running[pool.submit(check, canon, args)] = (canon, parent, op, pred, None)
             if not running:
+                if not stop and memory_budget is not None and not memory_budget.may_start():
+                    if not memory_waiting:
+                        print("waiting for memory headroom before starting more checks", flush=True)
+                        memory_waiting = True
+                    producer_stop.wait(0.25)
+                    continue
                 if not stop and scored_future is not None and not scored_future.done():
                     wait([scored_future], timeout=0.1)
                     continue
@@ -706,8 +731,12 @@ def main():
                     rec = {"status": "error", "hc": None, "hh": None, "stderr": repr(exc)}
                 if first is None and args.retry_jobs and rec.get("status") in ("memout", "timeout"):
                     retry_q.append((canon, parent, op, pred,
-                                    {k: rec.get(k) for k in ("status", "seconds", "total_seconds", "peak_rss_mb") if k in rec}))
-                    print(f"  {rec['status']} at {args.mem_mb:.0f} MB / {args.timeout_long:.0f} s, queued for a "
+                                    {k: rec.get(k) for k in ("status", "seconds", "total_seconds", "peak_rss_mb", "limit_reason") if k in rec}))
+                    reason = {"shared-memory-budget": "shared checker memory budget reached",
+                              "system-memory-reserve": "system memory headroom reached"}.get(
+                                  rec.get("limit_reason"),
+                                  f"{rec['status']} at the per-check {args.mem_mb:.0f} MB / {args.timeout_long:.0f} s budget")
+                    print(f"  unresolved ({reason}), queued for a "
                           f"{args.retry_mem_mb:.0f} MB re-check ({len(retry_q)} waiting): {canon}", flush=True)
                     continue
                 record = rec.pop("record", None)
@@ -718,7 +747,15 @@ def main():
                 row.update(rec)
                 if first is not None:
                     row["retried_from"] = first
-                    print(f"  re-check done: {row['status']} hc={row.get('hc')} ({row['cells']} cells, "
+                    result = (f"{row['status']} hc={row['hc']}" if row.get("hc") is not None else
+                              {"memout": "unresolved: memory limit reached",
+                               "timeout": "unresolved: time limit reached",
+                               "inconclusive": "unresolved: corona search bound reached"}.get(row["status"], row["status"]))
+                    if row.get("limit_reason") == "shared-memory-budget":
+                        result = "unresolved: shared checker memory budget reached"
+                    elif row.get("limit_reason") == "system-memory-reserve":
+                        result = "unresolved: stopped to preserve system memory headroom"
+                    print(f"  re-check done: {result} ({row['cells']} cells, "
                           f"{row.get('seconds', 0):.0f} s, {row.get('peak_rss_mb') or 0:.0f} MB): {canon}", flush=True)
                 if row["status"] == "nontiler" and (row["hc"] or 0) >= 3:
                     row["witness"] = record
@@ -752,20 +789,25 @@ def main():
                     now = time.monotonic()
                     rate = evals / (now - t0)
                     left = deadline - now
+                    stop_at = time.strftime("%H:%M", time.localtime(time.time() + left))
+                    timing = (f"{fmt_dur(now - t0)} elapsed | search budget left {fmt_dur(left)} "
+                              f"(stop new checks at ~{stop_at})")
+                    if left <= 0:
+                        timing += "; draining outstanding checks"
                     if args.max_evals:
-                        left = min(left, (args.max_evals - evals) / max(rate, 1e-9))
-                    eta = time.strftime("%H:%M", time.localtime(time.time() + left))
+                        remaining = max(0, args.max_evals - evals)
+                        timing += f"; {remaining:,} until evaluation limit (~{fmt_dur(remaining / max(rate, 1e-9))} at observed rate)"
                     print(f"  {evals} evals, {rate:.1f}/s, archive {len(archive)}, non-tilers by hc: "
                           + ", ".join(f"{k}:{v}" for k, v in sorted(hc_hist.items()))
-                          + f" | {fmt_dur(now - t0)} elapsed, ends ~{eta} (in {fmt_dur(left)})", flush=True)
+                          + f" | {timing}", flush=True)
                     if args.sweep_min_hc and (sweep_q or sweep_heap):
                         per = sweep_stats["edits"] / max(1, sweep_stats["parents"])
                         todo = len(sweep_q) + per * len(sweep_heap)
                         n_sw = gen_stats.get("search-sweep", (0, 0, 0))[0]
                         sw_rate = n_sw / (now - t0)
-                        sw_eta = f", ~{fmt_dur(todo / sw_rate)} at the current pace" if sw_rate > 0 else ""
+                        sw_eta = f", rough backlog time ~{fmt_dur(todo / sw_rate)}" if sw_rate > 0 else ""
                         print(f"     sweep: {len(sweep_heap)} parents waiting + {len(sweep_q)} edits queued, "
-                              f"~{todo:,.0f} checks to go{sw_eta} (new hc>=3 finds add more)", flush=True)
+                              f"~{todo:,.0f} checks in this backlog{sw_eta} (new hc>=3 finds can add work)", flush=True)
                     if sc is not None:
                         print(f"     scored batches: {generation_seconds:.1f}s generation/inference, "
                               f"{len(queue)} queued, refill {'running' if scored_future is not None else 'idle'}", flush=True)

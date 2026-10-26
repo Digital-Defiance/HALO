@@ -163,9 +163,77 @@ class RunnerTests(unittest.TestCase):
             with mock.patch.object(runner, "rss_mb", return_value=4000):
                 rec = runner.run_one(str(binary), "O 0 0", 9, 2, 3000, d)
                 self.assertEqual(rec["status"], "memout")
+            budget = runner.MemoryBudget(50, available=lambda: 100000)
+            with runner.use_memory_budget(budget), mock.patch.object(runner, "rss_mb", return_value=100):
+                rec = runner.run_one(str(binary), "O 0 0", 9, 2, 3000, d)
+                self.assertEqual(rec["status"], "memout")
+                self.assertEqual(rec["limit_reason"], "shared-memory-budget")
+            self.assertTrue(budget.may_start())
+
+    def test_defect_memory_pressure_does_not_invent_a_score(self):
+        with tempfile.TemporaryDirectory() as d:
+            binary = Path(d) / "defect"
+            binary.write_text("#!" + sys.executable + "\nimport time\ntime.sleep(2)\n")
+            binary.chmod(0o755)
+            budget = runner.MemoryBudget(50, available=lambda: 100000)
+            with runner.use_memory_budget(budget), mock.patch.object(runner, "rss_mb", return_value=100):
+                rec = runner.run_defect("O 0 0", 3, 3, timeout=2, binary=str(binary))
+            self.assertEqual(rec["defect_stop"], "memout")
+            self.assertEqual(rec["defect_limit_reason"], "shared-memory-budget")
+            self.assertIsNone(rec["defect"])
+            self.assertTrue(budget.may_start())
+
+
+class MemoryBudgetTests(unittest.TestCase):
+    def test_pressure_selects_one_low_priority_victim(self):
+        budget = runner.MemoryBudget(48000, 8000, available=lambda: 100000)
+        budget.register(1, priority=3000)
+        budget.register(2, priority=20000)
+        budget.register(3, priority=-1)
+        self.assertIsNone(budget.stop_reason(1, 3000))
+        self.assertIsNone(budget.stop_reason(2, 20000))
+        self.assertIsNone(budget.stop_reason(3, 6000))
+        budget.limit_mb = 25000
+        self.assertIsNone(budget.stop_reason(2, 20000))
+        self.assertEqual(budget.stop_reason(3, 6000), "shared-memory-budget")
+        self.assertIsNone(budget.stop_reason(1, 3000))
+        self.assertFalse(budget.may_start())
+        budget.unregister(3)
+        self.assertTrue(budget.may_start())
+
+    def test_system_reserve_blocks_dispatch_and_recovers(self):
+        available = iter([7000, 9000])
+        budget = runner.MemoryBudget(48000, 8000, available=lambda: next(available))
+        with mock.patch.object(runner.time, "monotonic", side_effect=[0, 0.01, 0.2]):
+            self.assertFalse(budget.may_start())
+            budget.register(1)
+            self.assertEqual(budget.stop_reason(1, 100), "system-memory-reserve")
+            budget.unregister(1)
+            self.assertTrue(budget.may_start())
+
+    def test_budget_context_restores_previous_state_on_error(self):
+        previous = runner.MEMORY_BUDGET
+        with self.assertRaises(RuntimeError):
+            with runner.use_memory_budget(runner.MemoryBudget(48000)):
+                self.assertIsNot(runner.MEMORY_BUDGET, previous)
+                raise RuntimeError("test unwind")
+        self.assertIs(runner.MEMORY_BUDGET, previous)
 
 
 class SearchTests(unittest.TestCase):
+    def test_search_installs_and_releases_shared_memory_budget(self):
+        previous = runner.MEMORY_BUDGET
+        seen = []
+        def classify(*args):
+            seen.append(runner.MEMORY_BUDGET)
+            return {"status": "nontiler", "hc": 0, "hh": 0, "seconds": 0.001}
+        with tempfile.TemporaryDirectory() as d:
+            rows = self.run_search(d, n=10, classifier=classify,
+                                   extra=("--memory-budget-mb", "48000", "--memory-reserve-mb", "0"))
+        self.assertEqual(len(rows), 10)
+        self.assertTrue(all(isinstance(b, runner.MemoryBudget) for b in seen))
+        self.assertIs(runner.MEMORY_BUDGET, previous)
+
     def run_guard_case(self, mode=None):
         bad = set()
 

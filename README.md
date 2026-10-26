@@ -58,12 +58,23 @@ The native runtime is now installed in `.venv` (Python 3.12). Activate it with
 `source /Volumes/Code/HALO/.venv/bin/activate`, or run
 `/Volumes/Code/HALO/scripts/search_frontier.sh`, which selects that interpreter
 automatically. The launcher resumes the existing archive with scorer v4 using
-MLX FP32, 75% sweep while work is available, and 14 ordinary plus 2 retry workers.
+MLX FP32, 75% sweep while work is available, 14 ordinary workers and one larger
+retry worker. Ordinary SAT checks are capped at 3,000 MB and the retry at
+20,000 MB. A cooperative guard monitors combined SAT/defect RSS against a
+48,000 MB budget and aims to retain 8,000 MB of system-available RAM. It pauses
+dispatch and stops selected checks as unresolved under pressure, preferring to
+stop defect enrichment before classification. These are sampled controls with
+possible overshoot, not an OS-enforced memory reservation. Periodic probes and
+the Python/GPU process are outside the RSS sum but count toward system headroom.
 The generator guard defaults to `--guard-mode warn`: it reports low recent yield
 and keeps the scorer enabled. Rare-hit windows are too noisy for an automatic
 permanent cutoff. `--guard-mode disable` explicitly restores the old shutoff;
 `--guard-mode off` or `--guard-checks 0` disables monitoring. Warnings and opt-in
 shutoffs are recorded in the run manifest.
+The default eight hours is an open-ended search time budget, not a prediction of
+how long a fixed job needs. Progress labels show when new checks stop; in-flight
+checks may finish later. Sweep backlog time is a separate rough estimate.
+Resource-capped retries remain unresolved (`hc: null` in JSON), not Hc=0.
 To reserve the GPU for training, override with
 `--scorer-schedule ane --scorer-spatial 256`.
 

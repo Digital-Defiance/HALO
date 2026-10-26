@@ -18,5 +18,6 @@ exec "$PYTHON" halo/search.py \
   --sweep-min-hc 3 --sweep-frac 0.75 --random-frac 0.5 \
   --guard-mode warn \
   --maxlevel 7 --escalate-maxlevel 9 --mem-mb 3000 \
-  --retry-mem-mb 10000 --retry-jobs 2 --retry-archived \
+  --retry-mem-mb 20000 --retry-jobs 1 --retry-archived \
+  --memory-budget-mb 48000 --memory-reserve-mb 8000 \
   --jobs 14 --hours 8 "$@"
