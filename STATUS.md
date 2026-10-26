@@ -89,7 +89,17 @@ Fixes in `search.py`:
   - `--parent-min-cells`: parents only from shapes at least this large.
   - Fitness prefers larger parents on ties when `--prefer-min-cells` is set.
 - **Run 3 (planned):** Kaplan seeds, parents >= 15 cells, checks only 18+ cells (beyond Kaplan's enumeration), memout retries on, scorer v3 at `--random-frac 0.5` so the guard and the report get a live A/B.
-- **Bake-off A** (cloud, `halo/bakeoff.py`, parents = Hc>=3 shapes of 7–17 cells from runs 1–2 and the 11-hex seeds, same parents per generator; interim at ~500 per arm). Hc>=2 rate: random 0.78%, scorer-v3 picks 2.38%, splat 0/31. At 12+ cells: random 0.27%, v3 1.95%. **v3 beats random about 3×.** Generation cost per new shape on 2 cloud cores: random ~1 ms, v3 108 ms, splat 18 s (it runs dry once the parents' easy neighbours are taken), relax-cell 27 s.
+- **Bake-off A, final** (cloud, `halo/bakeoff.py`; parents = Hc>=3 shapes of 7–17 cells from runs 1–2 and the 11-hex seeds, the same for every generator; log in the agent cloud only). Hc>=2 rate, 95% CI:
+
+  | Generator | n | all sizes | 15+ cells | generation per shape (2 cloud cores) |
+  | --- | --- | --- | --- | --- |
+  | random mutants | 1000 | 1.40% (0.84–2.34) | 0.97% (n = 309) | ~1 ms |
+  | scorer v3 picks | 1000 | 2.10% (1.38–3.19) | 2.01% (n = 299) | 108 ms |
+  | splat relaxation | 63 | 1.59% (0.28–8.46) | 0/27 | 18 s (runs dry) |
+  | cell relaxation | (smoke test only) | | | 27 s |
+
+  v3 ≈ 1.5× random overall and ≈ 2× at 15+ cells. Consistent, but the intervals overlap; the interim "3×" was early noise. Scored picks are 62% tilers (cheap) and both of their Hc=3 finds were small known shapes (8 and 10 cells). **Relaxation verdict:** it works as designed, but shows no yield advantage over random mutants and costs about 10,000× more per shape to generate. It stays an off-by-default option (`--relax-frac`). Revisit only with a much stronger scorer.
+- **Run 3 started** 2026-10-26 ~11:42 on the owner's Mac with the planned settings (`--min-cells 18 --parent-min-cells 15`, Kaplan seeds, v3 at 50%, memout retries, 14 jobs). It runs at ~50 checks/s. 0 archived memouts at 18–30 cells. First 600 checks: scored 3/312 Hc>=2 vs random 0/288.
 
 ## Continuous relaxation ("Gaussian splat") generator (2026-10-26, experimental, off by default)
 
