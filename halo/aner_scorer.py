@@ -45,6 +45,38 @@ def numpy_forward(W, blocks, X):
     return h @ W["head.weight"].T + W["head.bias"]
 
 
+def mlx_bench(W, blocks, X, ref, repeats, dtype_name):
+    """GPU (Metal) forward pass via Apple's MLX. Returns (shapes/s, max |diff| vs ref) or None."""
+    try:
+        import mlx.core as mx
+    except ImportError:
+        return None
+    dt = mx.float16 if dtype_name == "fp16" else mx.float32
+    Wm = {k: mx.array(v).astype(dt) for k, v in W.items()}
+
+    def act_mx(x):
+        return x * mx.sigmoid(1.702 * x)
+
+    def fwd(x):
+        h = act_mx(x @ Wm["inp.weight"].T + Wm["inp.bias"])
+        for i in range(blocks):
+            t = act_mx(h @ Wm[f"blocks.{i}.l1.weight"].T + Wm[f"blocks.{i}.l1.bias"])
+            h = h + t @ Wm[f"blocks.{i}.l2.weight"].T + Wm[f"blocks.{i}.l2.bias"]
+        return h @ Wm["head.weight"].T + Wm["head.bias"]
+
+    fwd_c = mx.compile(fwd)
+    xs = mx.array(X).astype(dt)
+    mx.eval(fwd_c(xs))  # warm-up / compile
+    best = 1e9
+    for _ in range(repeats):
+        t0 = time.perf_counter()
+        out = fwd_c(xs)
+        mx.eval(out)
+        best = min(best, time.perf_counter() - t0)
+    got = np.array(out.astype(mx.float32))
+    return len(X) / best, float(np.abs(got - ref).max())
+
+
 def build_aner(W, blocks, spatial=64):
     import aner
     g = aner.Graph()
@@ -89,6 +121,13 @@ def main():
         ref = numpy_forward(W, blocks, X)
         best = min(best, time.perf_counter() - t0)
     print(f"NumPy CPU : {n / best:12,.0f} shapes/s")
+
+    for dt in ("fp32", "fp16"):
+        res = mlx_bench(W, blocks, X, ref, args.repeats, dt)
+        if res is None:
+            print("MLX GPU   : not installed (pip install mlx) - skipped")
+            break
+        print(f"MLX GPU {dt}: {res[0]:12,.0f} shapes/s, max |diff| vs CPU {res[1]:.4f}")
 
     g, prog = build_aner(W, blocks)
     print(f"ANER      : uses Neural Engine = {prog.uses_neural_engine}, compile {prog.compile_ms:.0f} ms")
