@@ -93,6 +93,12 @@ def fitness(rec):
     return (rec["hc"], big, rec.get("hh") or rec["hc"], -defect_frac(rec), near, min(rec.get("seconds", 0.0), 600.0))
 
 
+def fmt_dur(seconds):
+    seconds = max(0, int(seconds))
+    h, m = divmod(seconds // 60, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m{seconds % 60:02d}s"
+
+
 def defect_frac(rec):
     """Share of the cells next to an hc-patch that the best (hc+1)-corona found leaves
     uncovered (lower is closer to Heesch number hc+1); 1.0 when not measured."""
@@ -407,10 +413,15 @@ def main():
             out.append((k, "sweep:" + op))
         return out
 
+    sweep_stats = {"parents": 0, "edits": 0}  # for the sweep ETA
+
     def next_sweep():
         while not sweep_q and sweep_heap:
             _, _, parent = heapq.heappop(sweep_heap)
-            for k, op in neighbours(parent):
+            found = neighbours(parent)
+            sweep_stats["parents"] += 1
+            sweep_stats["edits"] += len(found)
+            for k, op in found:
                 sweep_q.append((k, parent, op))
         while sweep_q:
             k, parent, op = sweep_q.popleft()
@@ -604,9 +615,23 @@ def main():
                     hist = {}
                     for r in live:
                         hist[r["hc"]] = hist.get(r["hc"], 0) + 1
-                    rate = evals / (time.monotonic() - t0)
+                    now = time.monotonic()
+                    rate = evals / (now - t0)
+                    left = deadline - now
+                    if args.max_evals:
+                        left = min(left, (args.max_evals - evals) / max(rate, 1e-9))
+                    eta = time.strftime("%H:%M", time.localtime(time.time() + left))
                     print(f"  {evals} evals, {rate:.1f}/s, archive {len(archive)}, non-tilers by hc: "
-                          + ", ".join(f"{k}:{v}" for k, v in sorted(hist.items())), flush=True)
+                          + ", ".join(f"{k}:{v}" for k, v in sorted(hist.items()))
+                          + f" | {fmt_dur(now - t0)} elapsed, ends ~{eta} (in {fmt_dur(left)})", flush=True)
+                    if args.sweep_min_hc and (sweep_q or sweep_heap):
+                        per = sweep_stats["edits"] / max(1, sweep_stats["parents"])
+                        todo = len(sweep_q) + per * len(sweep_heap)
+                        n_sw = gen_stats.get("search-sweep", (0, 0, 0))[0]
+                        sw_rate = n_sw / (now - t0)
+                        sw_eta = f", ~{fmt_dur(todo / sw_rate)} at the current pace" if sw_rate > 0 else ""
+                        print(f"     sweep: {len(sweep_heap)} parents waiting + {len(sweep_q)} edits queued, "
+                              f"~{todo:,.0f} checks to go{sw_eta} (new hc>=3 finds add more)", flush=True)
                     if sc is not None:
                         for gen in sorted(gen_stats):
                             n_all, n_good, n_tile = gen_stats[gen]
