@@ -16,6 +16,8 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | --- | --- |
 | `SPEC.md` | The plan: acceptance criteria, prior art, strategy tracks, architecture, milestones, risks, decision log |
 | `STATUS.md` | Living handoff log: what's done, running, next. **Read this first when resuming.** |
+| `PIPELINE_REVIEW.md` | Pipeline measurements, fixes, current allocation, and remaining strategy gaps |
+| `scripts/search_frontier.sh` | Next native frontier run; resume after the current run finishes |
 | `CLAUDE.md` | Short orientation for coding agents |
 | `scripts/setup_heesch_sat.sh` | Clones and builds Craig Kaplan's `heesch-sat` checker at a pinned commit |
 | `third_party/heesch-sat/` | Our Makefiles for building `heesch-sat` on macOS and Linux |
@@ -48,7 +50,39 @@ sudo apt-get install -y libcryptominisat5-dev libboost-dev
 
 The main machine is an Apple M4 Max with 64 GB. Search runs use all CPU cores for SAT checks. The GPU and Neural Engine (through ANER, `/Volumes/Code/ANER`) are used for the learned scorer in Track D.
 
-A coding agent working through the Claude desktop link gets a small Linux VM on this Mac (4 cores, 3 GB), not macOS. It cannot reach Metal or the Neural Engine. Long native runs are started by the user from macOS Terminal with commands the agent provides.
+Execution environments vary by agent. The older Claude desktop link uses a small Linux VM; this Codex review used the native Mac shell, and verified the Neural Engine outside the sandbox. Check the actual host and backend rather than assuming accelerator access. Long search runs are started from macOS Terminal.
+
+## Search environment and restart
+
+The native runtime is now installed in `.venv` (Python 3.12). Activate it with
+`source /Volumes/Code/HALO/.venv/bin/activate`, or run
+`/Volumes/Code/HALO/scripts/search_frontier.sh`, which selects that interpreter
+automatically. The launcher resumes the existing archive with scorer v4 using
+MLX FP32, 75% sweep while work is available, and 14 ordinary plus 2 retry workers.
+To reserve the GPU for training, override with
+`--scorer-schedule ane --scorer-spatial 256`.
+
+The dependency lock, fixed benchmark inputs, raw results and environment hashes
+are in `benchmarks/2026-10-26/`. See `PIPELINE_REVIEW.md` for the measured benefits
+and the limits of the replay benchmark.
+
+## Broader compute opportunities and priority
+
+[ANER's roadmap](https://github.com/Digital-Defiance/ANER/blob/gpu-perf/ROADMAP.md)
+records explicit FP32 support, accurate execution/fallback reports, measured
+backend/tile selection, reusable buffers and asynchronous execution, and
+workload-driven operation and portability improvements.
+
+None of that broader work needs to precede the next HALO run. The immediate
+pipeline changes are implemented and tested. Resume searching, compare frontier
+discoveries per wall-hour, and prioritize better scorer training and designed
+constructions over additional inference throughput. Existing ANE width-256
+inference is available if GPU training competes with the MLX scorer. Unexpected
+CPU fallback would justify bringing ANER diagnostics forward before relying on
+that path for another long run.
+
+Model weights and the large `results/search_hex_01.jsonl` archive use Git LFS.
+Clones need Git LFS and `git lfs pull` to materialize them before searching.
 
 ## Licenses
 

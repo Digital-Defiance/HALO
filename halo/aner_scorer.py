@@ -153,18 +153,22 @@ def compile_schedule(g, name, spatial=64):
 
 
 class Scorer:
-    """Batch scorer: ANER (schedule 'ane', 'gpu' or 'split'), MLX on the GPU ('mlx', fp16),
+    """Batch scorer: ANER (schedule 'ane', 'gpu' or 'split'), MLX on the GPU ('mlx', fp16,
+    or 'mlx-fp32'),
     or NumPy on the CPU ('numpy'). Falls back to NumPy if the chosen backend is unavailable."""
 
-    def __init__(self, weights, schedule="ane"):
+    def __init__(self, weights, schedule="ane", spatial=64):
         self.W, self.blocks, self.window = load_weights(weights)
         self.schedule = schedule
+        self.spatial = spatial
         self.prog = None
         self.mlx_fwd = None
-        if schedule == "mlx":
+        self.mlx_dtype = None
+        if schedule in ("mlx", "mlx-fp32"):
             try:
                 import mlx.core as mx
-                Wm = {k: mx.array(v).astype(mx.float16) for k, v in self.W.items()}
+                self.mlx_dtype = mx.float32 if schedule == "mlx-fp32" else mx.float16
+                Wm = {k: mx.array(v).astype(self.mlx_dtype) for k, v in self.W.items()}
                 blocks = self.blocks
 
                 def fwd(x):
@@ -182,7 +186,7 @@ class Scorer:
         elif schedule != "numpy":
             try:
                 self.graph = build_graph(self.W, self.blocks)
-                self.prog, _ = compile_schedule(self.graph, schedule)
+                self.prog, _ = compile_schedule(self.graph, schedule, spatial)
             except Exception as exc:  # aner missing or compile failure: fall back to NumPy
                 print(f"Scorer: ANER unavailable ({exc}); using NumPy", file=sys.stderr)
                 self.prog = None
@@ -192,10 +196,15 @@ class Scorer:
         import scorer as scorer_mod
         return scorer_mod.images(line, self.window, self.W["inp.weight"].shape[1])
 
+    def featurize_many(self, lines):
+        """Batch occupancy encoding shared by ANER, MLX and NumPy backends."""
+        import scorer as scorer_mod
+        return scorer_mod.images_many(lines, self.window, self.W["inp.weight"].shape[1])
+
     @property
     def backend(self):
         if self.mlx_fwd is not None:
-            return "mlx-gpu-fp16"
+            return "mlx-gpu-fp32" if self.schedule == "mlx-fp32" else "mlx-gpu-fp16"
         if self.prog is None:
             return "numpy"
         parts = [n for n, on in (("ane", self.prog.uses_neural_engine),
@@ -206,7 +215,7 @@ class Scorer:
         X = np.ascontiguousarray(X, dtype=np.float32)
         if self.mlx_fwd is not None:
             mx = self._mx
-            out = self.mlx_fwd(mx.array(X).astype(mx.float16))
+            out = self.mlx_fwd(mx.array(X).astype(self.mlx_dtype))
             return np.array(out.astype(mx.float32))
         if self.prog is None:
             return numpy_forward(self.W, self.blocks, X)

@@ -86,6 +86,45 @@ def images(line, window=WINDOW, size=None):
     return out
 
 
+def images_many(lines, window=WINDOW, size=None):
+    """Contiguous occupancy images and their input-row indices, in images() order.
+
+    Group equal-size grids for vectorized symmetry transforms and scatter all
+    occupied cells into one allocation. Orientations outside the window are
+    omitted exactly as in images(), including its repeated symmetric images.
+    """
+    size = size or input_size(window)
+    if size < window * window:
+        raise ValueError("feature size is smaller than the occupancy window")
+    if not lines:
+        return np.empty((0, size), np.float32), np.empty(0, np.intp)
+    groups = {}
+    max_symmetries = 0
+    for i, line in enumerate(lines):
+        grid, cells = shp.parse(line)
+        groups.setdefault((grid, len(cells)), []).append((i, cells))
+        max_symmetries = max(max_symmetries, len(shp.SYMMETRIES[grid]))
+    count = len(lines) * max_symmetries
+    features = np.zeros((count, size), np.float32)
+    valid = np.zeros(count, dtype=bool)
+    for (grid, _), group in groups.items():
+        indices = np.array([i for i, _ in group], dtype=np.intp)
+        cells = np.array([cells for _, cells in group], dtype=np.int32)
+        matrices = np.array(shp.SYMMETRIES[grid], dtype=np.int32).reshape(-1, 2, 2)
+        points = np.einsum("sij,bnj->bsni", matrices, cells)
+        points -= points.min(axis=2, keepdims=True)
+        fits = (points.max(axis=2) < window).all(axis=2)
+        rows = indices[:, None] * max_symmetries + np.arange(len(matrices))[None, :]
+        rows = rows[fits]
+        positions = points[..., 1] * window + points[..., 0]
+        features[rows[:, None], positions[fits]] = 1.0
+        valid[rows] = True
+    owners = np.repeat(np.arange(len(lines), dtype=np.intp), max_symmetries)
+    if valid.all():
+        return features, owners
+    return features[valid], owners[valid]
+
+
 def featurize(rows, window=WINDOW):
     """Returns X (list of image stacks), tile, hc, source, kept-row indices. Shapes that do not
     fit the window in any orientation are skipped."""

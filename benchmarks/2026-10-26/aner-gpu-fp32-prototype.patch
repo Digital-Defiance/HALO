@@ -1,0 +1,52 @@
+--- a/src/gpu.m
++++ b/src/gpu.m
+@@ -65,14 +65,7 @@
+ }
+ 
+ static NSData *fp16_weights(const float *w, int count) {
+-    uint16_t *half = malloc(sizeof(uint16_t) * (size_t)count);
+-    if (!half)
+-        return nil;
+-    for (int k = 0; k < count; k++) {
+-        __fp16 h = (__fp16)w[k];
+-        memcpy(half + k, &h, sizeof(h));
+-    }
+-    return [NSData dataWithBytesNoCopy:half length:sizeof(uint16_t) * (size_t)count freeWhenDone:YES];
++    return [NSData dataWithBytes:w length:sizeof(float) * (size_t)count];
+ }
+ 
+ static MPSGraphOptimization gpu_opt_level(void) {
+@@ -210,7 +203,7 @@
+                 MPSGraphShapedType *t = [[MPSGraphShapedType alloc] initWithShape:shape dataType:MPSDataTypeFloat32];
+                 feeds[x] = t;
+                 feedOrder[op->input_index] = t;
+-                out = [g castTensor:x toType:MPSDataTypeFloat16 name:nil];
++                out = [g castTensor:x toType:MPSDataTypeFloat32 name:nil];
+                 colconst[i] = 0;
+                 break;
+             }
+@@ -218,7 +211,7 @@
+                 /* One value per channel, kept as a column; consumers broadcast it. */
+                 NSData *wData = fp16_weights(op->weight, op->channels);
+                 if (!wData) { ok = 0; break; }
+-                out = [g constantWithData:wData shape:@[@(op->channels), @1] dataType:MPSDataTypeFloat16];
++                out = [g constantWithData:wData shape:@[@(op->channels), @1] dataType:MPSDataTypeFloat32];
+                 colconst[i] = 1;
+                 break;
+             }
+@@ -233,13 +226,13 @@
+                     NSData *dData = fp16_weights(d, n);
+                     free(d);
+                     if (!dData) { ok = 0; break; }
+-                    MPSGraphTensor *col = [g constantWithData:dData shape:@[@(n), @1] dataType:MPSDataTypeFloat16];
++                    MPSGraphTensor *col = [g constantWithData:dData shape:@[@(n), @1] dataType:MPSDataTypeFloat32];
+                     out = [g multiplicationWithPrimaryTensor:val[op->a] secondaryTensor:col name:nil];
+                 } else {
+                     NSData *wData = fp16_weights(op->weight, op->channels * op->in_channels);
+                     if (!wData) { ok = 0; break; }
+                     MPSGraphTensor *w = [g constantWithData:wData shape:@[@(op->channels), @(op->in_channels)]
+-                                                   dataType:MPSDataTypeFloat16];
++                                                   dataType:MPSDataTypeFloat32];
+                     out = [g matrixMultiplicationWithPrimaryTensor:w secondaryTensor:val[op->a] name:nil];
+                 }
+                 colconst[i] = colconst[op->a];

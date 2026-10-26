@@ -1,0 +1,50 @@
+[
+  {
+    "backend": "numpy-fp32",
+    "seconds": 0.28750170895364136
+  },
+  {
+    "backend": "ane",
+    "seconds": 0.05149033397901803,
+    "max_tile_logit_error": 0.31052565574645996,
+    "max_hc_image_error": 0.08025920391082764,
+    "max_mean_hc_error": 0.031294286251068115,
+    "p99_mean_hc_error": 0.02494424767792225,
+    "top32_overlap": 31,
+    "top32_mean_fp32_score": 0.9933673143386841,
+    "reference_top32_mean_score": 0.9935042858123779
+  },
+  {
+    "backend": "gpu",
+    "seconds": 0.03643162501975894,
+    "max_tile_logit_error": 0.0032552480697631836,
+    "max_hc_image_error": 0.001109004020690918,
+    "max_mean_hc_error": 0.000457763671875,
+    "p99_mean_hc_error": 0.00018269151041749865,
+    "top32_overlap": 32,
+    "top32_mean_fp32_score": 0.9935042858123779,
+    "reference_top32_mean_score": 0.9935042858123779
+  },
+  {
+    "backend": "ane+gpu",
+    "seconds": 0.035119625041261315,
+    "max_tile_logit_error": 0.282331645488739,
+    "max_hc_image_error": 0.06867504119873047,
+    "max_mean_hc_error": 0.031294286251068115,
+    "p99_mean_hc_error": 0.020219746977090836,
+    "top32_overlap": 32,
+    "top32_mean_fp32_score": 0.9935042858123779,
+    "reference_top32_mean_score": 0.9935042858123779
+  },
+  {
+    "backend": "mlx-gpu-fp32",
+    "seconds": 0.022962833987548947,
+    "max_tile_logit_error": 1.9073486328125e-06,
+    "max_hc_image_error": 5.960464477539062e-07,
+    "max_mean_hc_error": 2.384185791015625e-07,
+    "p99_mean_hc_error": 1.1920928955078125e-07,
+    "top32_overlap": 32,
+    "top32_mean_fp32_score": 0.9935042858123779,
+    "reference_top32_mean_score": 0.9935042858123779
+  }
+]

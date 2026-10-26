@@ -1,0 +1,29 @@
+[
+  {
+    "backend": "gpu-fp32-prototype",
+    "images": 384,
+    "median_ms": 3.609500010497868,
+    "max_tile_logit_error": 1.9073486328125e-06,
+    "max_hc_image_error": 4.76837158203125e-07,
+    "max_mean_hc_error": 7.450580596923828e-08,
+    "top32_overlap": 32
+  },
+  {
+    "backend": "gpu-fp32-prototype",
+    "images": 3072,
+    "median_ms": 4.704250022768974,
+    "max_tile_logit_error": 3.814697265625e-06,
+    "max_hc_image_error": 1.0728836059570312e-06,
+    "max_mean_hc_error": 2.384185791015625e-07,
+    "top32_overlap": 32
+  },
+  {
+    "backend": "gpu-fp32-prototype",
+    "images": 24576,
+    "median_ms": 37.735542049631476,
+    "max_tile_logit_error": 4.0531158447265625e-06,
+    "max_hc_image_error": 1.2516975402832031e-06,
+    "max_mean_hc_error": 3.5762786865234375e-07,
+    "top32_overlap": 32
+  }
+]

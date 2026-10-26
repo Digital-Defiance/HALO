@@ -1,1 +1,4 @@
 results/models/*.npz filter=lfs diff=lfs merge=lfs -text
+results/search_hex_01.jsonl filter=lfs diff=lfs merge=lfs -text
+# Unified patches retain a context marker on otherwise blank lines.
+benchmarks/**/*.patch whitespace=-blank-at-eol

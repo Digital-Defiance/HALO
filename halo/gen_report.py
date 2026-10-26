@@ -7,11 +7,14 @@ Usage:
 Per generator (search = random mutants, search-scored = scorer-picked mutants,
 search-relax-<mode> = continuous relaxation): shapes checked, share that tile, the Hc
 distribution of non-tilers, the Hc >= 2 rate with a 95% Wilson interval, Hc >= 3 count,
-and checker seconds per shape (yield per CPU-second matters as much as yield per check).
+and worker seconds per shape, including ladder stages, retries and defect scoring.
+Historical rows without total_seconds undercount earlier ladder stages.
 """
 import argparse
 import json
 import math
+
+from runner import evaluation_seconds
 
 
 def wilson(k, n, z=1.96):
@@ -28,6 +31,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log")
     ap.add_argument("--since", default="", help="only rows with ts >= this (ISO, as logged)")
+    ap.add_argument("--run-id", default="", help="only this run (IDs and settings in LOG.runs.jsonl)")
     ap.add_argument("--skip-lines", type=int, default=0, help="ignore the first N lines (e.g. an earlier run)")
     ap.add_argument("--min-cells", type=int, default=0,
                     help="only shapes with at least this many cells (18 for hexes = beyond Kaplan's enumeration)")
@@ -43,12 +47,14 @@ def main():
                 continue
             if args.since and (r.get("ts") or "") < args.since:
                 continue
+            if args.run_id and r.get("run_id") != args.run_id:
+                continue
             if (r.get("cells") or 0) < args.min_cells:
                 continue
             g = r.get("generator") or "?"
             s = stats.setdefault(g, {"n": 0, "tile": 0, "hc": {}, "sec": 0.0, "cells": 0, "other": 0})
             s["n"] += 1
-            s["sec"] += float(r.get("seconds") or 0.0)
+            s["sec"] += evaluation_seconds(r)
             s["cells"] += int(r.get("cells") or 0)
             st = r.get("status")
             if st in ("isohedral", "periodic", "anisohedral", "aperiodic"):
@@ -61,7 +67,7 @@ def main():
         print("no rows")
         return
     print(f"{'generator':20s} {'checked':>7s} {'tilers':>7s} {'unsettled':>9s}  {'Hc>=2 rate (95% CI)':26s} "
-          f"{'Hc>=3':>5s} {'s/check':>7s} {'cells':>5s}  non-tilers by Hc")
+          f"{'Hc>=3':>5s} {'s/check':>7s} {'3+/wkr-h':>9s} {'cells':>5s}  non-tilers by Hc")
     for g in sorted(stats):
         s = stats[g]
         n = s["n"]
@@ -69,8 +75,9 @@ def main():
         k3 = sum(v for h, v in s["hc"].items() if h >= 3)
         lo, hi = wilson(k2, n)
         hist = ", ".join(f"{h}:{v}" for h, v in sorted(s["hc"].items()))
+        per_hour = 3600 * k3 / s["sec"] if s["sec"] else 0.0
         print(f"{g:20s} {n:7d} {100*s['tile']/n:6.1f}% {s['other']:9d}  {100*k2/n:5.2f}% ({100*lo:4.2f}-{100*hi:5.2f}%)      "
-              f"{k3:5d} {s['sec']/n:7.2f} {s['cells']/n:5.1f}  {hist}")
+              f"{k3:5d} {s['sec']/n:7.2f} {per_hour:9.1f} {s['cells']/n:5.1f}  {hist}")
 
 
 if __name__ == "__main__":

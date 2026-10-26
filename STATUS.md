@@ -1,6 +1,18 @@
 # HALO status
 
-Last updated: 2026-10-26 (session 1, Claude). Current phase: **M1 done. First overnight search (47k checks) found nothing above Hc=3 beyond the seeds. It was throttled by a Python bug (fixed). Scorer v2 trained (`scorer_v2_hex.npz`, 22×22 window); ranking by predicted hc alone works best because high-Hc shapes look like near-tilers. ANER GPU path sped up 1.55× (split 2.03M shapes/s) on ANER branch `gpu-perf`, awaiting the owner's rebuild and test. Next: rerun the search with the fix and scorer v2 (Next steps, item 4).**
+Last updated: 2026-10-26 (Codex controlled benchmarks). Current phase: **Run 3b was stopped by the owner at 176,000 evaluations for benchmarking. Updated pipeline and HALO-local Python 3.12 environment are ready for restart. Best certified Hc remains 4 (21 cells). Read the current handoff before the historical notes.**
+
+## Current handoff: pipeline review
+
+- **Running:** no production search. The owner stopped native PID 97377 at 176,000 evaluations (archive 651,859). Existing production result bytes were not changed by the review or benchmarks.
+- **Done:** measured Python/dispatch overhead; faster bitboard hole checks and parsed geometry; timed SAT waits; background scored refills; incremental histogram; guard/pending-entry and sweep exhaustion fixes; exact evaluation caps; escalation without periodic probes; complete new ladder/retry/defect cost accounting; partial-tail append repair; per-run IDs and manifests. The native NumPy integration test exposed an OpenBLAS/fork deadlock, addressed by enabling `posix_spawn` in runner subprocess launches. See `PIPELINE_REVIEW.md` for evidence and limits.
+- **Validation:** 12 regression tests passed, including exact batch-feature parity. Eight paired 512-check replays had identical inputs and outcomes; median 6.481 s old versus 4.543 s updated MLX FP32 (~43% higher replay throughput). Test caps excluded costly retries/defect scoring, so this is not a production-yield forecast. Native smoke tests and the independent 21-cell witness check also passed. Full artifacts: `benchmarks/2026-10-26/`.
+- **Next:** `./scripts/search_frontier.sh` selects `.venv/bin/python` and resumes the same archive with MLX FP32, 75% sweep while available, remaining checks split scored/random, and the same caps/14+2 workers. Activate manually with `source /Volumes/Code/HALO/.venv/bin/activate`. For concurrent GPU training, override with `--scorer-schedule ane --scorer-spatial 256`.
+- **Precision/ANER:** full-refill inference: ANE FP16 width 256 ~46 ms, ANER GPU FP16 ~35 ms, isolated ANER GPU FP32 prototype ~38 ms, MLX FP32 ~26 ms. ANE matched 31/32 FP32 top picks on one batch; GPU FP16 matched 32/32. Production ANER runtime remains unchanged and up to date; proposed improvements are in `/Volumes/Code/ANER/ROADMAP.md`.
+- **Strategy gap:** the live search is restricted to 18–30-cell hexes. Track B's marked/forced-chain design loop remains unimplemented; maintain it as a separate experiment aimed at escaping the Hc=4 plateau. Relaxation stays off. No new record is claimed.
+- **Environment correction:** this Codex shell is native macOS. Early tests used the system Python 3.9; final benchmarks and the restart environment use `.venv` Python 3.12.11 with pinned NumPy/psutil/MLX versions in the benchmark artifacts. Native accelerator access is needed for tests. Older Linux-VM statements below describe earlier agents.
+- **Blocked:** none for this review. The active process will not load edited modules until a new launch. No second production search was started.
+- **Priority and publication follow-up:** broader ANER opportunities and their escalation triggers are recorded in both READMEs and ANER's `ROADMAP.md`. They do not block restarting HALO. The large search archive is now tracked through Git LFS without changing its bytes; unmaterialized LFS pointers are rejected before resume. All 13 regression tests pass. The owner authorized publication of the code, benchmark artifacts and saved archive on HALO `main`, and the ANER documentation on its existing `gpu-perf` branch.
 
 ## Done
 
@@ -153,7 +165,7 @@ What it showed before the bake-off (38 Hc>=3 11-hex seeds, every output checked)
 
 Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed straight into shared Metal buffers), lighter GPU lowering (consts as [C,1] columns; diagonal conv → elementwise multiply), `ANER_GPU_CHUNK` (default now 4096), `ANER_GPU_PIPELINE`, `ANER_GPU_OPT_LEVEL`. `make test` passes. Sweep (`scripts/bench_aner_gpu.sh`, scorer v1, 65,536 shapes): GPU-only 1.08M → **1.67M** shapes/s, split 1.47M → **2.03M** (MLX fp16 1.49M). Opt level 1: no gain, and at 8192 it moved work onto the NE. ANER's own split test showed split 40.3 ms vs NE-only 12.2 ms on a deep chain, because greedy claiming let the slower GPU take half the batch. **Fixed on ANER branch `gpu-perf`** (`d6c094e`): split programs time each engine at compile time and refine during batches; an engine claims a chunk only if it can finish it before the other engine could finish everything left; the last active worker never steps aside. Owner to rebuild and re-test. The GPU speedups are commit `2c1122f` on the same branch.
 
-## Next steps (in order)
+## Historical next steps (superseded by the current handoff above)
 
 1. **Owner, on macOS: M1 baseline, pass 1** (about 1 hour; uses all cores and up to roughly 30 GB RAM):
    ```sh

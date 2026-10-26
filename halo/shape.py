@@ -78,22 +78,32 @@ def connected(grid, cells):
 
 def has_hole(grid, cells):
     """True if some empty cell is enclosed (not reachable from outside via grid adjacency)."""
-    nb = NEIGHBOURS[grid]
-    s = set(cells)
-    xs = [x for x, _ in cells]
-    ys = [y for _, y in cells]
-    x0, x1, y0, y1 = min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1
-    start = (x0, y0)
-    stack, seen = [start], {start}
-    while stack:
-        x, y = stack.pop()
-        for dx, dy in nb:
-            c = (x + dx, y + dy)
-            if x0 <= c[0] <= x1 and y0 <= c[1] <= y1 and c not in s and c not in seen:
-                seen.add(c)
-                stack.append(c)
-    empty = (x1 - x0 + 1) * (y1 - y0 + 1) - len(s)
-    return len(seen) != empty
+    if grid not in NEIGHBOURS:
+        raise KeyError(grid)
+    x0 = min(x for x, _ in cells) - 1
+    y0 = min(y for _, y in cells) - 1
+    width = max(x for x, _ in cells) - x0 + 2
+    height = max(y for _, y in cells) - y0 + 2
+    # Flood all exterior cells together in a bitboard. The extra border is empty
+    # and connected; masking columns prevents shifts wrapping between rows.
+    full = (1 << (width * height)) - 1
+    left = full // ((1 << width) - 1)
+    right = left << (width - 1)
+    row = (1 << width) - 1
+    occupied = 0
+    for x, y in cells:
+        occupied |= 1 << ((y - y0) * width + x - x0)
+    empty = full ^ occupied
+    seen = left | right | row | (row << (width * (height - 1)))
+    while True:
+        neighbours = ((seen & ~left) >> 1) | ((seen & ~right) << 1)
+        neighbours |= (seen >> width) | (seen << width)
+        if grid == "H":
+            neighbours |= ((seen & ~right) >> (width - 1)) | ((seen & ~left) << (width - 1))
+        expanded = (seen | neighbours) & empty
+        if expanded == seen:
+            return seen != empty
+        seen = expanded
 
 
 def canonical(grid, cells):
@@ -112,7 +122,14 @@ def canonical(grid, cells):
 def check(line, max_cells=200, max_span_sum=29):
     """Check a shape against SPEC.md §1. Returns (ok, list_of_problems, info)."""
     grid, cells = parse(line)
+    return check_cells(grid, cells, max_cells, max_span_sum)
+
+
+def check_cells(grid, cells, max_cells=200, max_span_sum=29):
+    """Constraint checks for already parsed cells (the search's hot path)."""
     problems = []
+    if not cells:
+        return False, ["empty shape"], {"grid": grid, "cells": 0}
     if len(set(cells)) != len(cells):
         problems.append("duplicate cells")
     if len(cells) > max_cells:

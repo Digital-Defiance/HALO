@@ -3,6 +3,7 @@ build/
 __pycache__/
 *.pyc
 .venv/
+.cache/
 # raw shape dumps from gen (regenerable); keep JSONL results
 results/*.txt
 results/*.parts.*

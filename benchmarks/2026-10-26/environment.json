@@ -1,0 +1,24 @@
+{
+  "python": "3.12.11 (main, Aug 18 2025, 19:02:39) [Clang 20.1.4 ]",
+  "executable": "/Volumes/Code/HALO/.venv/bin/python",
+  "packages": {
+    "numpy": "2.5.4",
+    "psutil": "7.2.2",
+    "mlx": "0.32.4",
+    "mlx-metal": "0.32.4"
+  },
+  "source_and_model_sha256": {
+    "/Volumes/Code/HALO/halo/search.py": "554694ea3b8dcf657c7229d7aeaf0e55b89436ea7ff3a643afb3103bc2ab1b94",
+    "/Volumes/Code/HALO/halo/scorer.py": "9f1f3a62d5e808b8f246b36b9889b36185959c2b558add59f26eae4c4b85722f",
+    "/Volumes/Code/HALO/halo/aner_scorer.py": "a3fb1bbfc1c1f5ea7219031645840f4033a6e9704a019416cd44cc891e07c929",
+    "/Volumes/Code/HALO/halo/shape.py": "7d332eefbb4bf6a122ffde5bdea8b80d6e3ebe3df924a6bb1b82daef8f1ddb4c",
+    "/Volumes/Code/HALO/halo/runner.py": "2a3470554cc8ed498c73fd6998602c254d8d779713fe74ba97cd7731e020c778",
+    "/Volumes/Code/HALO/results/models/scorer_v4_hex.npz": "e12948b2364bcdf87dbfc5b24090f6410874527f79cc801184fd00d04de0faf9",
+    "/Volumes/Code/ANER/lib/build/libaner.0.dylib": "e57e8a6c8b44f288039b1e53f077612727468fcef9c49e6fdf22a20c7c8363a3"
+  },
+  "fixture_sha256": "5c444d52fca75b8c0e96191c7796f5539722a77ddf5f319020dc418fd5732cf1",
+  "fixed_checks_per_replay": 512,
+  "workers": 14,
+  "limits": "SAT quick 0.5s, long 1s, RSS 1500MB, periodic 0.05/0.1s; no defect or high-memory retry; checker picks frozen to FP32 reference",
+  "validation": "12 unit/regression tests passed; 250 unique valid native smoke-test shapes, no error statuses; eight replay runs had identical classifications"
+}

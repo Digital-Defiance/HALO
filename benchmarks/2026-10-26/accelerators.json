@@ -1,0 +1,224 @@
+[
+  {
+    "schedule": "ane",
+    "spatial": 64,
+    "backend": "ane",
+    "images": 384,
+    "median_ms": 1.2396659003570676,
+    "images_per_second": 309760.87983818416,
+    "max_abs_error": 0.22174835205078125,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 64,
+    "backend": "ane",
+    "images": 3072,
+    "median_ms": 9.218957973644137,
+    "images_per_second": 333226.38076694444,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 64,
+    "backend": "ane",
+    "images": 24576,
+    "median_ms": 85.94404195901006,
+    "images_per_second": 285953.5046271295,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 0.96875
+  },
+  {
+    "schedule": "gpu",
+    "spatial": 64,
+    "backend": "gpu",
+    "images": 384,
+    "median_ms": 3.238665987737477,
+    "images_per_second": 118567.33650643034,
+    "max_abs_error": 0.0025272369384765625,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "gpu",
+    "spatial": 64,
+    "backend": "gpu",
+    "images": 3072,
+    "median_ms": 4.388041910715401,
+    "images_per_second": 700084.4710480805,
+    "max_abs_error": 0.002702474594116211,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "gpu",
+    "spatial": 64,
+    "backend": "gpu",
+    "images": 24576,
+    "median_ms": 35.081875044852495,
+    "images_per_second": 700532.6815792874,
+    "max_abs_error": 0.0032552480697631836,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "split",
+    "spatial": 64,
+    "backend": "ane+gpu",
+    "images": 384,
+    "median_ms": 1.208541914820671,
+    "images_per_second": 317738.25573685596,
+    "max_abs_error": 0.22174835205078125,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "split",
+    "spatial": 64,
+    "backend": "ane+gpu",
+    "images": 3072,
+    "median_ms": 4.313666955567896,
+    "images_per_second": 712155.11805676,
+    "max_abs_error": 0.11066246032714844,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "split",
+    "spatial": 64,
+    "backend": "ane+gpu",
+    "images": 24576,
+    "median_ms": 32.8407920897007,
+    "images_per_second": 748337.6141742743,
+    "max_abs_error": 0.282331645488739,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 128,
+    "backend": "ane",
+    "images": 384,
+    "median_ms": 1.0581250535324216,
+    "images_per_second": 362906.0655147166,
+    "max_abs_error": 0.22174835205078125,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 128,
+    "backend": "ane",
+    "images": 3072,
+    "median_ms": 5.577874951995909,
+    "images_per_second": 550747.3771710781,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 128,
+    "backend": "ane",
+    "images": 24576,
+    "median_ms": 61.36208295356482,
+    "images_per_second": 400507.916567918,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 0.96875
+  },
+  {
+    "schedule": "ane",
+    "spatial": 256,
+    "backend": "ane",
+    "images": 384,
+    "median_ms": 0.6403339793905616,
+    "images_per_second": 599687.0576280714,
+    "max_abs_error": 0.22174835205078125,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 256,
+    "backend": "ane",
+    "images": 3072,
+    "median_ms": 3.9058340480551124,
+    "images_per_second": 786515.7511056274,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 256,
+    "backend": "ane",
+    "images": 24576,
+    "median_ms": 46.29158298484981,
+    "images_per_second": 530895.649173267,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 0.96875
+  },
+  {
+    "schedule": "ane",
+    "spatial": 512,
+    "backend": "ane",
+    "images": 384,
+    "median_ms": 0.5840419325977564,
+    "images_per_second": 657487.0374324132,
+    "max_abs_error": 0.22174835205078125,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 512,
+    "backend": "ane",
+    "images": 3072,
+    "median_ms": 4.044625093229115,
+    "images_per_second": 759526.5146187879,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 1.0
+  },
+  {
+    "schedule": "ane",
+    "spatial": 512,
+    "backend": "ane",
+    "images": 24576,
+    "median_ms": 47.96791693661362,
+    "images_per_second": 512342.44823421317,
+    "max_abs_error": 0.31052565574645996,
+    "top32_overlap": 0.96875
+  },
+  {
+    "schedule": "mlx",
+    "backend": "mlx-gpu-fp16",
+    "images": 384,
+    "median_ms": 2.6793750002980232,
+    "max_abs_error": 0.005937099456787109
+  },
+  {
+    "schedule": "mlx",
+    "backend": "mlx-gpu-fp16",
+    "images": 3072,
+    "median_ms": 3.9576670387759805,
+    "max_abs_error": 0.008013010025024414
+  },
+  {
+    "schedule": "mlx",
+    "backend": "mlx-gpu-fp16",
+    "images": 24576,
+    "median_ms": 20.108875003643334,
+    "max_abs_error": 0.008501052856445312
+  },
+  {
+    "schedule": "mlx",
+    "backend": "mlx-gpu-fp32",
+    "images": 384,
+    "median_ms": 1.027249963954091,
+    "max_abs_error": 5.7220458984375e-06
+  },
+  {
+    "schedule": "mlx",
+    "backend": "mlx-gpu-fp32",
+    "images": 3072,
+    "median_ms": 4.0539170149713755,
+    "max_abs_error": 1.9073486328125e-06
+  },
+  {
+    "schedule": "mlx",
+    "backend": "mlx-gpu-fp32",
+    "images": 24576,
+    "median_ms": 26.263458072207868,
+    "max_abs_error": 1.9073486328125e-06
+  }
+]

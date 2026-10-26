@@ -1,0 +1,84 @@
+{
+  "baseline-ane-w64": {
+    "median_seconds": 6.46788941702107,
+    "checks_per_second": 79.16402810212095,
+    "runs": [
+      6.4234425000613555,
+      6.512336333980784
+    ],
+    "statuses": [
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      },
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      }
+    ]
+  },
+  "current-ane-w64": {
+    "median_seconds": 4.626148957991973,
+    "checks_per_second": 110.67833845536481,
+    "runs": [
+      4.65075062494725,
+      4.601547291036695
+    ],
+    "statuses": [
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      },
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      }
+    ]
+  },
+  "current-ane-w256": {
+    "median_seconds": 4.650689708534628,
+    "checks_per_second": 110.09935210151912,
+    "runs": [
+      4.610665583051741,
+      4.690713834017515
+    ],
+    "statuses": [
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      },
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      }
+    ]
+  },
+  "current-mlx-fp32-w64": {
+    "median_seconds": 4.655328082968481,
+    "checks_per_second": 109.98863128603733,
+    "runs": [
+      4.617862290935591,
+      4.692793875001371
+    ],
+    "statuses": [
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      },
+      {
+        "nontiler": 418,
+        "isohedral": 85,
+        "timeout": 9
+      }
+    ]
+  },
+  "fixed_input_hash": "7049225da3db86cbb9edd3b94d4f4eac9f32556c460fa6211d8eb9625dfa51ed",
+  "python": "3.12.11 (main, Aug 18 2025, 19:02:39) [Clang 20.1.4 ]"
+}

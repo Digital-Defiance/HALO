@@ -1,0 +1,4 @@
+numpy==2.5.4
+psutil==7.2.2
+mlx==0.32.4
+mlx-metal==0.32.4

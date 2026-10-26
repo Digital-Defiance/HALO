@@ -29,6 +29,7 @@ import collections
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -68,8 +69,8 @@ def rss_mb(pid):
                     if line.startswith("VmRSS:"):
                         return int(line.split()[1]) / 1e3
             return None
-        out = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)],
-                             capture_output=True, text=True).stdout.strip()
+        out = subprocess.run([shutil.which("ps") or "ps", "-o", "rss=", "-p", str(pid)],
+                             capture_output=True, text=True, close_fds=False).stdout.strip()
         return int(out) / 1e3 if out else None
     except Exception:
         return None
@@ -82,6 +83,20 @@ def shape_key(line):
     nums = list(map(int, toks[1:]))
     cells = sorted(zip(nums[0::2], nums[1::2]))
     return grid + " " + " ".join(f"{x} {y}" for x, y in cells)
+
+
+def ensure_jsonl_boundary(path):
+    """Preserve an interrupted final fragment, but don't append a record onto it."""
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return
+    with open(path, "rb") as fh:
+        if fh.read(128).startswith(b"version https://git-lfs.github.com/spec/v1"):
+            raise ValueError(f"{path} is a Git LFS pointer; run git lfs pull before resuming")
+        fh.seek(-1, os.SEEK_END)
+        last = fh.read(1)
+    if last != b"\n":
+        with open(path, "a") as fh:
+            fh.write("\n")
 
 
 def parse_output(text):
@@ -103,9 +118,12 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
     with os.fdopen(fd, "w") as fh:
         fh.write(line + "\n")
     out = inp[:-4] + ".out.txt"
-    cmd = [sat, "-isohedral", "-show", "-maxlevel", str(maxlevel)] + (["-hh"] if hh else []) + [inp, "-o", out]
+    cmd = [shutil.which(sat) or sat, "-isohedral", "-show", "-maxlevel", str(maxlevel)] + (["-hh"] if hh else []) + [inp, "-o", out]
     start = time.monotonic()
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    # Python-created descriptors are non-inheritable. Keeping close_fds=False
+    # enables posix_spawn on macOS instead of fork's OpenBLAS atfork handlers,
+    # which can deadlock against a concurrently running NumPy scorer.
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, close_fds=False)
     peak = 0.0
     stop = None
     while proc.poll() is None:
@@ -120,10 +138,19 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
             stop = "timeout"
             proc.kill()
             break
-        time.sleep(0.05 if time.monotonic() - start < 1 else 0.25)
+        # wait() notices quick exits without imposing a 50 ms floor per shape.
+        # Long solves retain the same RSS/timeout polling cadence.
+        remaining = timeout - (time.monotonic() - start)
+        interval = 0.05 if time.monotonic() - start < 1 else 0.25
+        try:
+            proc.wait(timeout=max(0.001, min(interval, remaining)))
+        except subprocess.TimeoutExpired:
+            pass
     proc.wait()
     secs = time.monotonic() - start
     stderr = proc.stderr.read().decode(errors="replace")[-500:] if proc.stderr else ""
+    if proc.stderr:
+        proc.stderr.close()
     text = ""
     if os.path.exists(out):
         with open(out) as fh:
@@ -158,7 +185,8 @@ def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=6
     record = f"{grid} {' '.join(line.split()[1:])}\n~ {hc} {hh} 0\n"
     cmd = [binary, "-maxd", str(max_d), "-confl", str(confl)]
     start = time.monotonic()
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, close_fds=False)
     out_box = {}
 
     def feed():
@@ -212,7 +240,7 @@ def run_periodic(line, budget, max_t):
     else:
         cmd = [sys.executable, PERIODIC, "--shape", line, "--json", "--budget", str(budget), "--max-t", str(max_t)]
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=budget + 60).stdout
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=budget + 60, close_fds=False).stdout
         info = json.loads(out.strip().splitlines()[-1])
     except Exception as exc:
         return {"status": "error", "error": repr(exc)[:200]}
@@ -228,6 +256,26 @@ def classify(line, opts, workdir):
     """Full checking ladder for one shape. `opts` needs: sat, maxlevel, timeout, timeout_long,
     mem_mb, periodic_budget, periodic_quick, periodic_max_t (e.g. the runner's argparse args).
     Ladder: quick heesch-sat -> quick periodic probe -> long heesch-sat -> long periodic probe."""
+    start = time.monotonic()
+    rec = _classify(line, opts, workdir)
+    # Preserve seconds (last SAT attempt) for old consumers; account for every
+    # SAT/periodic stage separately when comparing generators' actual cost.
+    rec["total_seconds"] = round(time.monotonic() - start, 4)
+    return rec
+
+
+def evaluation_seconds(rec):
+    """Elapsed worker time including all ladder stages, retry and defect scoring.
+
+    Historical rows without total_seconds provide only a lower bound.
+    """
+    first = rec.get("retried_from") or {}
+    return (float(rec.get("total_seconds", rec.get("seconds")) or 0.0)
+            + float(rec.get("defect_seconds") or 0.0)
+            + float(first.get("total_seconds", first.get("seconds")) or 0.0))
+
+
+def _classify(line, opts, workdir):
     def periodic_stage(rec, budget):
         p = run_periodic(line, budget, opts.periodic_max_t)
         rec["periodic"] = p
@@ -240,9 +288,10 @@ def classify(line, opts, workdir):
     hh = getattr(opts, "hh", False)
     rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout, opts.mem_mb, workdir, hh)
     grid = line.split()[0].rstrip("?")
-    if opts.periodic_budget <= 0 or grid not in ("O", "H") or rec["status"] not in UNSETTLED:
+    if rec["status"] not in UNSETTLED:
         return rec
-    if periodic_stage(rec, min(opts.periodic_quick, opts.periodic_budget)):
+    periodic_enabled = opts.periodic_budget > 0 and grid in ("O", "H")
+    if periodic_enabled and periodic_stage(rec, min(opts.periodic_quick, opts.periodic_budget)):
         return rec
     if rec["status"] == "timeout" and opts.timeout_long > opts.timeout:
         quick = rec
@@ -250,7 +299,7 @@ def classify(line, opts, workdir):
         rec["quick"] = {k: quick.get(k) for k in ("status", "seconds", "periodic")}
         if rec["status"] not in UNSETTLED:
             return rec
-    if opts.periodic_budget > opts.periodic_quick:
+    if periodic_enabled and opts.periodic_budget > opts.periodic_quick:
         periodic_stage(rec, opts.periodic_budget)
     # heesch-sat's "inconclusive" allows holed coronas (SPEC §6): a shape that reaches maxlevel
     # with holes may still have a small hole-free Heesch number. With no periodic tiling found,
@@ -296,6 +345,7 @@ def main():
     if not os.access(args.sat, os.X_OK):
         sys.exit(f"checker not found at {args.sat}; run scripts/setup_heesch_sat.sh")
 
+    ensure_jsonl_boundary(args.out)
     done = set()
     if os.path.exists(args.out):
         with open(args.out) as fh:
