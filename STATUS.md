@@ -55,6 +55,37 @@ Last updated: 2026-10-26 (session 1, Claude). Current phase: **M1 done. First ov
   **Finding: high-Hc shapes look like near-tilers.** Training tilers toward hc = −1 cut tilers among top picks to ~20% but dropped the Hc>=2 yield below random, because the good shapes went down with the tilers. Tilers are cheap to reject (isohedral check ~0.1 s), so rank by predicted hc alone and accept the tilers. v2 held-out AUCs: tiler 0.81, Hc>=2 0.85, Hc>=3 0.97 (17 positives).
 - **Shipped:** `results/models/scorer_v2_hex.npz` (Git LFS; 22×22 window, `--tiler-hc nan` so tilers are ignored in the hc loss, trained on all 184k labelled shapes) and `search.py --score-formula hc` (new default; `hc_tile` restores hc × (1 − p_tile)). v1 ranks about as well at 11–17 cells, but its 16×16 window can't see larger shapes. Scored picks only include shapes that fit the window in some orientation; bigger ones reach the checker only through the `--random-frac` control. Fine for the 18–21-cell target; widen the window before pushing past ~22 cells.
 - Compute split: the periodic detector took 45% of checker time (884 shapes, mean 11 s), non-tilers 43%.
+- **Live generator yield in run 1** (`halo/gen_report.py results/search_hex_01.jsonl`): random mutants 1.68% Hc>=2 (95% CI 1.35–2.09%, n = 4,691), scorer-v1 picks 1.97% (1.84–2.11%, n = 42,466). The scorer's live edge was small, far below the held-out top-5% numbers above. Picking the top 1.6% of mutants is a harsher operating point than a top-5% cut, and the candidates differ from the log the scorer was evaluated on.
+
+## Run 2 (2026-10-26 10:07 → ~10:50, owner's Mac, stopped early): scorer runaway
+
+Same log as run 1 (`results/search_hex_01.jsonl`, run-2 rows start at line 47,158), scorer v2, throughput fix in. **Throughput: ~92k checks in 42 minutes** (run 1: 19k in its first hour, ~2.4k/hour later). **The scorer ran away:** it predicts Hc 6–7 for 18–29-cell shapes, above anything it was trained on (max 4). The actual Hc>=2 rate over 67k such checks was 0%. Scored picks drifted to 21 cells on average. Their Hc>=2 rate was **0.32% vs 1.12% for random mutants**, and 70k of the 83k scored checks were Hc=0. A feedback loop drove it: the big Hc=0 shapes joined the archive, the 10% explore picks drew parents from the whole archive, and their mutants won the scorer's ranking again. Scorer v1 overrates big shapes even more (mean prediction 8+ at 21+ cells). Run 1 simply never offered it any. The held-out evaluation missed this because its shapes came from run 1, which never reached those sizes.
+
+Fixes in `search.py`:
+- `--explore-min-hc 1`: explore parents only from non-tilers with hc >= 1.
+- **Generator guard** (`--guard-checks 2000`, `--guard-ratio 0.5`): a guided generator (scored or relaxation) is switched off for the rest of the run when its Hc>=2 rate over its last 2,000 checks falls below half the random mutants' rate.
+- **Scorer v3** (`results/models/scorer_v3_hex.npz`, Git LFS): retrained on 11-hexes + run 1 + run 2 (276,554 shapes, 22×22 window, `--tiler-hc nan`, 12 epochs, stable, loss 0.84 → 0.62). Held-out AUCs: tiler 0.87, Hc>=2 0.90, Hc>=3 0.96 (v2: 0.81 / 0.85 / 0.97). **Calibrated by size now.** Mean predicted hc on run-2 shapes vs the actual mean for non-tilers:
+
+  | Cells | v2 | v3 | actual |
+  | --- | --- | --- | --- |
+  | 12–14 | 1.06 | 0.93 | 0.47 |
+  | 15–17 | 2.81 | 0.41 | 0.11 |
+  | 18–20 | 5.94 | 0.05 | 0.03 |
+  | 21–29 | 7.0–7.6 | 0.00 | 0.00–0.01 |
+
+  Remaining trap: from elite parents, both v2 and v3 pick mostly 7–9-cell mutants (simulated refill: top 32 of 2,048). That's where Hc>=2 is commonest, but those sizes are fully enumerated (Kaplan: all polyhexes up to 17 cells). **Per-check yield is the wrong target for records.** Judge generators by Hc>=2/3 at 18+ cells (`gen_report.py --min-cells 18`).
+- At 18+ cells, run 2 found Hc>=2 in 3 of 1,463 random mutants (0.2%) and in 0 of 69,689 scored picks. No Hc>=3 so far at 18+.
+- Owner restarted without the scorer as a stopgap.
+- **Kaplan's published data:** every polyhex with Hc>=3 or Hh>=3 for 11–17 cells is at `https://cs.uwaterloo.ca/~csk/heesch/hex/<n>hex_3up.txt` (plus PDFs and `heesch_dataset.tar.gz`). That includes all Hc=4 polyhexes: one each at 11, 13, 16 and 17 cells, two at 15. These are the right parents for 18+ cells. The agent sandboxes can't reach the site (proxy 403), so the owner downloads them into `refs/kaplan/` (raw files git-ignored; cite Kaplan 2022).
+
+## Continuous relaxation ("Gaussian splat") generator (2026-10-26, experimental, off by default)
+
+`halo/relax.py`: start from an elite shape, make occupancy soft, follow the scorer's gradient, snap back to cells (at most `--relax-max-flips` per round), repair (largest connected piece, holes filled, Epoch limits), and hand the distinct shapes to the checker. Modes: `cell` (one logit per cell near the shape) and `splat` (one Gaussian blob per starting cell; centres, widths and strengths move, so whole lobes shift together). Gradients come from MLX on a Metal GPU when available, otherwise from NumPy with a hand-written backward pass. `--selftest` checks both against finite differences (they agree). Wired into `search.py` as `--relax-frac` (default 0) with `--relax-mode cell,splat`. Shapes are logged as generator `search-relax-<mode>`, so any run doubles as a bake-off.
+
+What it showed before the bake-off (38 Hc>=3 11-hex seeds, every output checked):
+- **Unconstrained, it exploits the scorer at once.** It shrinks shapes to 4–9 cells, sizes the scorer never saw, where it predicts Hc ≈ 3. Fix: a size band (`--relax-shrink 0`, `--relax-grow 4`).
+- **Pure hc ascent ends among tilers** (41/41 isohedral), because the hc head is trained on non-tilers only. Fix: objective hc − w·softplus(tile logit), `--relax-tile-weight` (default 1). With w = 1: splat 64 shapes → 3 Hc=2, 1 Hc=1, 60 tilers; cell 15 shapes → 1 Hc=1, 14 tilers. With w = 3: almost no new shapes.
+- Bake-off running in the agent cloud (2 cores, 1.9 h, run-1 archive as starting point; random / scored / relax-cell / relax-splat, all from the same elite parents). Results to follow here.
 
 ## ANER GPU tuning (2026-10-26; ANER branch `gpu-perf`, not yet merged)
 
@@ -88,6 +119,7 @@ Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed str
    ```
    Run 1 (2026-10-25, scorer v1, slow parent picking) is analysed above. Run 2 resumes the same log with the throughput fix and scorer v2. Goals: keep all cores busy (the hourly rate should stay near hour 1's ~19k), see how high Hc gets at 18+ cells, compare `search-scored` vs `search` Hc>=2 yield, and collect larger labelled shapes.
 5. **Done for v2 (see above); repeat after each long run:** retrain on all logs (`halo/scorer.py <comma-separated JSONLs> --window 22 --tiler-hc nan --epochs 12 --eval-source <index of the newest log> --save <path>`), compare against the current model on held-out search shapes, and ship only if the top-5% Hc>=2 yield improves.
+5b. **Compare generators after every run:** `python3 halo/gen_report.py <log> --since <run start ts>`. Keep a generator only if its Hc>=2 rate per check (and per checker-second) beats random mutants outside the confidence interval.
 6. **Agent:** Track B as a search over markings (bump/nick per edge) instead of random enumeration, on 4–6-cell bases.
 7. **Owner, optional:** PDFs of Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 (*Math. Intelligencer* 43(3)) into `refs/` for Track A2.
 8. **Agent:** finish literature check A3 for 2024–2026 (as of Kaplan 2023, no polyform with H >= 5 is known). Then start Track B with the cheap route: scale small marked polyforms (bumps/nicks as sub-cells) and run heesch-sat on them.

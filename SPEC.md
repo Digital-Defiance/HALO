@@ -128,6 +128,8 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - 2026-10-25: The agent shell on the Mac is a Linux VM. Native Metal/Neural Engine runs are launched by the owner.
 - 2026-10-25: Gaussian-splat-style continuous relaxations are allowed only as an optional generator in Track D.
 - 2026-10-25: Learned that heesch-sat's "inconclusive" allows holed coronas (see §6). Inconclusive + no periodic tiling now means escalate maxlevel, never presume a tiler.
+- 2026-10-26: Built the continuous-relaxation generator (`halo/relax.py`, cell and Gaussian-splat modes) as an off-by-default option in Track C (`search.py --relax-frac`). It is kept only if a bake-off shows a better yield than random mutants. Constraints learned on day one: a size band (it otherwise shrinks shapes into sizes the scorer never saw) and a tiler penalty (the hc head ignores tilers).
+- 2026-10-26: Run 2 showed that a scorer used as a hard top-1.6% filter exploits its own extrapolation errors (predicted Hc 6-7 for big Hc=0 shapes). Policy: retrain on each run's labels, keep the in-run generator guard on, and judge generators by yield at 18+ cells (beyond Kaplan's exhaustive enumeration), not overall per-check yield.
 - 2026-10-25: Periodic tiling detector via torus exact cover instead of a k-isohedral classifier: simpler, gives proofs, catches any periodic tiling with at most 24 tiles per period.
 - 2026-10-25: Two-pass checking with per-shape time/memory caps. One runaway shape OOM-killed a whole batch on the 7 GB test box; the runner now isolates every shape in its own process.
 

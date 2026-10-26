@@ -17,9 +17,15 @@ With the learned scorer as a prefilter (ANER on Neural Engine + GPU):
   PYTHONPATH=/Volumes/Code/ANER/python python3 halo/search.py --seeds results/hex11.jsonl --seed-min-hc 3 \
       --log results/search_hex.jsonl --scorer results/models/scorer_hex11_b8.npz --hours 8
 
+Optional continuous-relaxation generator (halo/relax.py, off by default): --relax-frac 0.25 gives
+a quarter of the checks to shapes made by relaxing an elite parent to soft occupancies and following
+the scorer's gradient ("cell" or Gaussian "splat" mode; several modes take turns). Logged as
+generator search-relax-<mode>, so a run doubles as a bake-off against search / search-scored.
+
 Square and hex grids only (mutation needs grid adjacency).
 """
 import argparse
+import collections
 import heapq
 import json
 import math
@@ -92,6 +98,9 @@ def main():
                     help="among equal hc, prefer shapes with at least this many cells (e.g. 18 for hexes: "
                          "Kaplan enumerated all polyhexes up to 17 cells, max Hc 4)")
     ap.add_argument("--explore", type=float, default=0.1, help="chance to pick a random archived parent")
+    ap.add_argument("--explore-min-hc", type=int, default=1,
+                    help="random (explore) parents come from non-tilers with at least this hc. Run 2 filled the "
+                         "archive with ~70k large Hc=0 shapes; exploring from those mostly breeds more of them")
     ap.add_argument("--hours", type=float, default=1.0)
     ap.add_argument("--max-evals", type=int, default=0)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
@@ -117,9 +126,34 @@ def main():
     ap.add_argument("--score-formula", default="hc", choices=["hc", "hc_tile"],
                     help="rank candidates by predicted hc ('hc', default) or hc*(1-p_tile). High-Heesch shapes "
                          "look like near-tilers, so penalizing tiler-likeness also throws away the best shapes "
-                         "(held-out search data: top 5% hc>=2 yield 3.6% with 'hc' vs 2.6% with 'hc_tile')")
+                         "(held-out search data: top 5%% hc>=2 yield 3.6%% with 'hc' vs 2.6%% with 'hc_tile')")
     ap.add_argument("--random-frac", type=float, default=0.1,
                     help="fraction of checks given to unscored random mutants (keeps the scorer honest)")
+    ap.add_argument("--guard-checks", type=int, default=2000,
+                    help="switch off a guided generator (scored or relaxation) when, over its last N checks, its "
+                         "Hc>=2 rate is below --guard-ratio times the random mutants' rate over their last N "
+                         "(needs >= 500 random checks; 0 = no guard). Run 2's scorer ran away to big shapes it "
+                         "overrated and fell to 0.3%% vs 1.1%% for random mutants")
+    ap.add_argument("--guard-ratio", type=float, default=0.5)
+    # continuous relaxation generator (relax.py); off unless --relax-frac > 0
+    ap.add_argument("--relax-frac", type=float, default=0.0,
+                    help="fraction of checks given to relaxation-generated shapes (needs --scorer); 0 = off. "
+                         "--random-frac then applies to the remaining checks")
+    ap.add_argument("--relax-mode", default="splat",
+                    help="relaxation mode(s), comma-separated, taking turns: cell, splat")
+    ap.add_argument("--relax-backend", default="auto", choices=["auto", "mlx", "numpy"],
+                    help="gradient backend (auto: MLX on the GPU if installed, else NumPy on the CPU)")
+    ap.add_argument("--relax-parents", type=int, default=4, help="elite parents relaxed per relaxation refill")
+    ap.add_argument("--relax-rounds", type=int, default=6)
+    ap.add_argument("--relax-steps", type=int, default=30)
+    ap.add_argument("--relax-max-flips", type=int, default=4, help="cells changed per relaxation round, at most")
+    ap.add_argument("--relax-grow", type=int, default=4, help="cells a relaxed shape may gain vs its parent")
+    ap.add_argument("--relax-tile-weight", type=float, default=1.0,
+                    help="relaxation objective = hc_hat - w * softplus(tile logit). The hc head ignores tilers, "
+                         "so with w = 0 relaxation drifts into tilers")
+    ap.add_argument("--relax-shrink", type=int, default=0,
+                    help="cells a relaxed shape may lose vs its parent (unconstrained, relaxation shrinks "
+                         "shapes into sizes the scorer never saw)")
     args = ap.parse_args()
     rng = random.Random(args.seed)
     global PREFER_MIN_CELLS
@@ -173,12 +207,15 @@ def main():
     # incrementally; re-sorting the whole archive per candidate made the first overnight run
     # spend >95% of its time in Python with the checker cores idle.
     live = [r for r in archive.values() if r.get("status") == "nontiler"]
+    explore_pool = [r for r in live if (r.get("hc") or 0) >= args.explore_min_hc]
     elite_state = {"elite": [], "dirty": True}
 
     def note_result(row):
         if row.get("status") != "nontiler":
             return
         live.append(row)
+        if (row.get("hc") or 0) >= args.explore_min_hc:
+            explore_pool.append(row)
         el = elite_state["elite"]
         if len(el) < args.elite or fitness(row) > fitness(el[-1]):
             elite_state["dirty"] = True
@@ -186,8 +223,8 @@ def main():
     def pick_parent():
         if not live:
             return None
-        if rng.random() < args.explore:
-            return rng.choice(live)
+        if rng.random() < args.explore and explore_pool:
+            return rng.choice(explore_pool)
         if elite_state["dirty"]:
             elite_state["elite"] = heapq.nlargest(args.elite, live, key=fitness)
             elite_state["dirty"] = False
@@ -230,6 +267,26 @@ def main():
               f"per refill, {args.random_frac:.0%} random checks", flush=True)
     queue = []  # list of (pred, canon, parent, op), best first
 
+    def predict(canons):
+        """Scorer prediction per shape (mean over its symmetric images); shapes that fit no
+        orientation of the window are left out."""
+        feats, owner = [], []
+        for canon in canons:
+            for v in sc.featurize(canon):
+                feats.append(v)
+                owner.append(canon)
+        if not feats:
+            return {}
+        out = sc.score(np.stack(feats))
+        tot, cnt = {}, {}
+        for (tile, hc_hat), canon in zip(out, owner):
+            v = float(hc_hat)
+            if args.score_formula == "hc_tile":
+                v *= 1.0 - 1.0 / (1.0 + math.exp(-float(tile)))
+            tot[canon] = tot.get(canon, 0.0) + v
+            cnt[canon] = cnt.get(canon, 0) + 1
+        return {c: tot[c] / cnt[c] for c in tot}
+
     def refill():
         cands = {}
         for _ in range(args.candidates * 3):
@@ -239,23 +296,8 @@ def main():
             if c is None:
                 break
             cands[c[0]] = c
-        feats, owner = [], []
-        for canon in cands:
-            ims = sc.featurize(canon)
-            for v in ims:
-                feats.append(v)
-                owner.append(canon)
-        if not feats:
-            return
-        out = sc.score(np.stack(feats))
-        tot, cnt = {}, {}
-        for (tile, hc_hat), canon in zip(out, owner):
-            v = float(hc_hat)
-            if args.score_formula == "hc_tile":
-                v *= 1.0 - 1.0 / (1.0 + math.exp(-float(tile)))
-            tot[canon] = tot.get(canon, 0.0) + v
-            cnt[canon] = cnt.get(canon, 0) + 1
-        ranked = sorted(((tot[c] / cnt[c], c) for c in tot), reverse=True)[: args.pick]
+        preds = predict(cands)
+        ranked = sorted(((v, c) for c, v in preds.items()), reverse=True)[: args.pick]
         with lock:
             for pred, canon in ranked:
                 if canon in archive:
@@ -265,8 +307,49 @@ def main():
                 queue.append((pred, canon, parent, op))
         queue.sort(key=lambda q: -q[0])
 
+    relaxers, rqueue = [], []
+    if args.relax_frac > 0:
+        if sc is None:
+            sys.exit("--relax-frac needs --scorer")
+        import relax as relax_mod
+        for mode in args.relax_mode.split(","):
+            relaxers.append(relax_mod.Relaxer(
+                args.scorer, mode.strip(), args.relax_backend, rounds=args.relax_rounds, steps=args.relax_steps,
+                max_flips=args.relax_max_flips, min_cells=args.min_cells, max_cells=args.max_cells,
+                shrink=args.relax_shrink, grow=args.relax_grow, tile_weight=args.relax_tile_weight))
+        print(f"relaxation: {args.relax_frac:.0%} of checks, modes {args.relax_mode}, "
+              f"gradients on {relaxers[0].backend}", flush=True)
+    nrng = np.random.default_rng(args.seed)
+    relax_turn = [0]
+
+    def refill_relax():
+        rx = relaxers[relax_turn[0] % len(relaxers)]
+        relax_turn[0] += 1
+        made = []
+        for _ in range(args.relax_parents):
+            parent = pick_parent()
+            if parent is None:
+                break
+            for canon, info in rx.relax(parent["canon"], nrng, exclude=archive):
+                op = f"relax-{rx.mode}:r{info['round']}+{info['dist']}"
+                made.append((canon, parent["canon"], op))
+        preds = predict([m[0] for m in made])
+        with lock:
+            for canon, parent, op in made:
+                if canon in archive:
+                    continue
+                archive[canon] = {"canon": canon, "status": "pending"}
+                rqueue.append((canon, parent, op, preds.get(canon)))
+
+    disabled = set()  # guided generators switched off by the guard
+
     def next_job():
-        if sc is None or rng.random() < args.random_frac:
+        if relaxers and rng.random() < args.relax_frac:
+            if not rqueue:
+                refill_relax()
+            if rqueue:
+                return rqueue.pop(0)
+        if sc is None or "search-scored" in disabled or rng.random() < args.random_frac:
             return propose()
         if not queue:
             refill()
@@ -276,6 +359,34 @@ def main():
         return canon, parent, op, pred
 
     gen_stats = {}
+    recent = {}  # generator -> deque of recent outcomes (1 = Hc>=2) for the guard
+
+    def guard():
+        n_r = len(recent.get("search", ()))
+        if not args.guard_checks or n_r < min(500, args.guard_checks):
+            return
+        rate_r = sum(recent["search"]) / n_r
+        if rate_r == 0:
+            return
+        for gen, dq in recent.items():
+            if gen == "search" or gen in disabled or len(dq) < args.guard_checks:
+                continue
+            k = sum(dq)
+            if k / len(dq) < args.guard_ratio * rate_r:
+                disabled.add(gen)
+                print(f"  GUARD: switching off {gen}: Hc>=2 in {k}/{len(dq)} of its last checks "
+                      f"({100*k/len(dq):.2f}%) vs random mutants {100*rate_r:.2f}% (last {n_r})", flush=True)
+                if gen == "search-scored":
+                    queue.clear()
+                elif gen.startswith("search-relax-"):
+                    mode = gen[len("search-relax-"):]
+                    relaxers[:] = [r for r in relaxers if r.mode != mode]
+                    rqueue[:] = [q for q in rqueue if not q[2].startswith(f"relax-{mode}:")]
+
+    def generator_of(op, pred):
+        if op.startswith("relax-"):
+            return "search-" + op.split(":")[0]
+        return "search-scored" if pred is not None else "search"
     with open(args.log, "a") as logfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
         running = {}
         t0 = time.monotonic()
@@ -298,7 +409,7 @@ def main():
                     rec = {"status": "error", "hc": None, "hh": None, "stderr": repr(exc)}
                 record = rec.pop("record", None)
                 row = {"canon": canon, "shape": canon, "grid": grid, "cells": (len(canon.split()) - 1) // 2,
-                       "parent": parent, "op": op, "generator": "search-scored" if pred is not None else "search",
+                       "parent": parent, "op": op, "generator": generator_of(op, pred),
                        "pred": None if pred is None else round(pred, 4), "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 row.update(rec)
                 if row["status"] == "nontiler" and (row["hc"] or 0) >= 3:
@@ -310,13 +421,18 @@ def main():
                     logfh.flush()
                 evals += 1
                 ga, gg, gt = gen_stats.get(row["generator"], (0, 0, 0))
-                gen_stats[row["generator"]] = (ga + 1, gg + int(row["status"] == "nontiler" and (row["hc"] or 0) >= 2),
-                                               gt + int(row["status"] in ("isohedral", "periodic")))
+                good = int(row["status"] == "nontiler" and (row["hc"] or 0) >= 2)
+                gen_stats[row["generator"]] = (ga + 1, gg + good, gt + int(row["status"] in ("isohedral", "periodic")))
+                if args.guard_checks:
+                    if row["generator"] not in recent:
+                        recent[row["generator"]] = collections.deque(maxlen=args.guard_checks)
+                    recent[row["generator"]].append(good)
                 f = fitness(row)
                 if f[0] > best_seen[0]:
                     best_seen = f
                     print(f"  NEW BEST hc={row['hc']} hh={row['hh']} cells={row['cells']}: {canon}", flush=True)
                 if evals % 100 == 0:
+                    guard()
                     hist = {}
                     for r in live:
                         hist[r["hc"]] = hist.get(r["hc"], 0) + 1
@@ -324,11 +440,12 @@ def main():
                     print(f"  {evals} evals, {rate:.1f}/s, archive {len(archive)}, non-tilers by hc: "
                           + ", ".join(f"{k}:{v}" for k, v in sorted(hist.items())), flush=True)
                     if sc is not None:
-                        for gen in ("search-scored", "search"):
-                            n_all, n_good, n_tile = gen_stats.get(gen, (0, 0, 0))
+                        for gen in sorted(gen_stats):
+                            n_all, n_good, n_tile = gen_stats[gen]
                             if n_all:
-                                print(f"     {gen:13s}: {n_all} checked, hc>=2 {n_good} ({100*n_good/n_all:.1f}%), "
-                                      f"tilers {100*n_tile/n_all:.0f}%", flush=True)
+                                print(f"     {gen:19s}: {n_all} checked, hc>=2 {n_good} ({100*n_good/n_all:.1f}%), "
+                                      f"tilers {100*n_tile/n_all:.0f}%" + ("  [switched off]" if gen in disabled else ""),
+                                      flush=True)
     print(f"done: {evals} evaluations; best hc={best_seen[0]}")
     top = sorted((r for r in archive.values() if r.get("status") == "nontiler"), key=fitness, reverse=True)[:10]
     for r in top:

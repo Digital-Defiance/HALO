@@ -8,3 +8,6 @@ results/*.txt
 results/*.parts.*
 .DS_Store
 
+
+# Kaplan's published Heesch data (download per STATUS.md; cite Kaplan 2022)
+refs/kaplan/
