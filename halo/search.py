@@ -186,11 +186,14 @@ def main():
                     help="chance of random mutants on non-sweep/non-relaxation checks when scored picks "
                          "are ready; random mutants also fill background-refill gaps")
     ap.add_argument("--guard-checks", type=int, default=2000,
-                    help="switch off a guided generator (scored or relaxation) when, over its last N checks, its "
+                    help="compare a guided generator (scored or relaxation) when, over its last N checks, its "
                          "Hc>=2 rate is below --guard-ratio times the random mutants' rate over their last N "
-                         "(needs >= 500 random checks; 0 = no guard). Run 2's scorer ran away to big shapes it "
-                         "overrated and fell to 0.3%% vs 1.1%% for random mutants")
+                         "(needs >= 500 random checks; 0 = no guard). This is a heuristic, not a significance test")
     ap.add_argument("--guard-ratio", type=float, default=0.5)
+    ap.add_argument("--guard-mode", choices=["warn", "disable", "off"], default="warn",
+                    help="warn (default) keeps guided generators running and reports low recent yield; "
+                         "disable restores permanent shutoff for the run; off skips monitoring. Sparse "
+                         "0-vs-1 windows are insufficient evidence to disable a scorer automatically")
     # continuous relaxation generator (relax.py); off unless --relax-frac > 0
     ap.add_argument("--relax-frac", type=float, default=0.0,
                     help="fraction of checks given to relaxation-generated shapes (needs --scorer); 0 = off. "
@@ -218,6 +221,8 @@ def main():
         ap.error("need 1 <= --min-cells <= --max-cells")
     if args.hours <= 0 or args.max_evals < 0 or args.candidates < 1 or args.pick < 1:
         ap.error("--hours, --candidates and --pick must be positive; --max-evals must be nonnegative")
+    if args.guard_checks < 0 or not math.isfinite(args.guard_ratio) or args.guard_ratio < 0:
+        ap.error("--guard-checks and --guard-ratio must be nonnegative, with a finite ratio")
     if any(not 0 <= x <= 1 for x in (args.explore, args.sweep_frac, args.random_frac, args.relax_frac)):
         ap.error("generator fractions and --explore must be between 0 and 1")
     rng = random.Random(args.seed)
@@ -393,7 +398,8 @@ def main():
         import aner_scorer
         sc = aner_scorer.Scorer(args.scorer, args.scorer_schedule, args.scorer_spatial)
         print(f"scorer: {args.scorer} on {sc.backend}; {args.candidates} candidates -> best {args.pick} "
-              f"per refill, {args.random_frac:.0%} random checks", flush=True)
+              f"per refill, {args.random_frac:.0%} random checks; "
+              f"guard={args.guard_mode if args.guard_checks else 'off'}", flush=True)
     queue = []  # list of (pred, canon, parent, op), best first
     scorer_lock = threading.Lock()
     scored_rng = random.Random(args.seed + 1)
@@ -585,10 +591,11 @@ def main():
 
     gen_stats = {}
     recent = {}  # generator -> deque of recent outcomes (1 = Hc>=2) for the guard
+    last_guard_warning = {}  # generator -> completed checks at its last warning
 
     def guard():
         n_r = len(recent.get("search", ()))
-        if not args.guard_checks or n_r < min(500, args.guard_checks):
+        if args.guard_mode == "off" or not args.guard_checks or n_r < min(500, args.guard_checks):
             return
         rate_r = sum(recent["search"]) / n_r
         if rate_r == 0:
@@ -599,7 +606,22 @@ def main():
                 continue
             k = sum(dq)
             if k / len(dq) < args.guard_ratio * rate_r:
+                info = {"generator": gen, "guided_hits": k, "guided_checks": len(dq),
+                        "random_hits": sum(recent["search"]), "random_checks": n_r,
+                        "completed_evaluations": evals, "mode": args.guard_mode}
+                if args.guard_mode == "warn":
+                    completed = gen_stats[gen][0]
+                    info["guided_completed"] = completed
+                    previous = last_guard_warning.get(gen)
+                    if previous is None or completed - previous >= args.guard_checks:
+                        last_guard_warning[gen] = completed
+                        print(f"  GUARD warning: {gen} stays enabled: recent Hc>=2 {k}/{len(dq)} "
+                              f"vs random {info['random_hits']}/{n_r}; heuristic comparison, "
+                              "monitoring only", flush=True)
+                        run_event("generator_guard_warning", **info)
+                    continue
                 disabled.add(gen)
+                run_event("generator_guard_disabled", **info)
                 print(f"  GUARD: switching off {gen}: Hc>=2 in {k}/{len(dq)} of its last checks "
                       f"({100*k/len(dq):.2f}%) vs random mutants {100*rate_r:.2f}% (last {n_r})", flush=True)
                 if gen == "search-scored":
@@ -709,7 +731,7 @@ def main():
                 ga, gg, gt = gen_stats.get(row["generator"], (0, 0, 0))
                 good = int(row["status"] == "nontiler" and (row["hc"] or 0) >= 2)
                 gen_stats[row["generator"]] = (ga + 1, gg + good, gt + int(row["status"] in ("isohedral", "periodic")))
-                if args.guard_checks:
+                if args.guard_checks and args.guard_mode != "off":
                     if row["generator"] not in recent:
                         recent[row["generator"]] = collections.deque(maxlen=args.guard_checks)
                     recent[row["generator"]].append(good)

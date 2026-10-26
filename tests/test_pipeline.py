@@ -166,6 +166,58 @@ class RunnerTests(unittest.TestCase):
 
 
 class SearchTests(unittest.TestCase):
+    def run_guard_case(self, mode=None):
+        bad = set()
+
+        class RankingScorer:
+            backend = "mock"
+            def __init__(self, *args):
+                self.ids = {}
+            def featurize(self, canon):
+                index = len(self.ids) + 1
+                self.ids[index] = canon
+                x = np.zeros(64, np.float32)
+                x[0] = index
+                return [x]
+            def score(self, features):
+                scores = features[:, 0]
+                for i in np.argsort(scores)[-8:]:
+                    bad.add(self.ids[int(scores[i])])
+                return np.column_stack([np.zeros(len(features)), scores])
+
+        def classify(canon, *args):
+            time.sleep(0.002)
+            hc = 0 if canon in bad else 2
+            return {"status": "nontiler", "hc": hc, "hh": hc, "seconds": 0.002}
+
+        extra = ["--guard-checks", "4", "--random-frac", "0.5"]
+        if mode is not None:
+            extra += ["--guard-mode", mode]
+        with tempfile.TemporaryDirectory() as d:
+            rows = self.run_search(d, n=240, classifier=classify, scorer=RankingScorer, extra=extra)
+            events = [json.loads(s) for s in (Path(d) / "out.jsonl.runs.jsonl").read_text().splitlines()]
+        return rows, events
+
+    def test_default_guard_warns_and_keeps_scoring(self):
+        rows, events = self.run_guard_case()
+        warnings = [e for e in events if e["event"] == "generator_guard_warning"]
+        self.assertTrue(warnings)
+        self.assertFalse(any(e["event"] == "generator_guard_disabled" for e in events))
+        self.assertTrue(any(r["generator"] == "search-scored" for r in rows[150:]))
+        self.assertEqual(len({r["canon"] for r in rows}), 240)
+        for first, second in zip(warnings, warnings[1:]):
+            self.assertGreaterEqual(second["guided_completed"] - first["guided_completed"], 4)
+
+    def test_hard_guard_requires_explicit_disable_mode(self):
+        rows, events = self.run_guard_case("disable")
+        self.assertTrue(any(e["event"] == "generator_guard_disabled" for e in events))
+        self.assertFalse(any(r["generator"] == "search-scored" for r in rows[-50:]))
+
+    def test_off_mode_keeps_scoring_without_guard_events(self):
+        rows, events = self.run_guard_case("off")
+        self.assertFalse(any(e["event"].startswith("generator_guard_") for e in events))
+        self.assertTrue(any(r["generator"] == "search-scored" for r in rows[-50:]))
+
     def run_search(self, directory, *, n=25, classifier=None, scorer=None, extra=()):
         seed = Path(directory) / "seeds.jsonl"
         if not seed.exists():

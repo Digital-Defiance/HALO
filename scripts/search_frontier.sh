@@ -16,6 +16,7 @@ exec "$PYTHON" halo/search.py \
   --scorer results/models/scorer_v4_hex.npz --scorer-schedule mlx-fp32 \
   --scorer-spatial 256 \
   --sweep-min-hc 3 --sweep-frac 0.75 --random-frac 0.5 \
+  --guard-mode warn \
   --maxlevel 7 --escalate-maxlevel 9 --mem-mb 3000 \
   --retry-mem-mb 10000 --retry-jobs 2 --retry-archived \
   --jobs 14 --hours 8 "$@"

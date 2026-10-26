@@ -59,6 +59,11 @@ The native runtime is now installed in `.venv` (Python 3.12). Activate it with
 `/Volumes/Code/HALO/scripts/search_frontier.sh`, which selects that interpreter
 automatically. The launcher resumes the existing archive with scorer v4 using
 MLX FP32, 75% sweep while work is available, and 14 ordinary plus 2 retry workers.
+The generator guard defaults to `--guard-mode warn`: it reports low recent yield
+and keeps the scorer enabled. Rare-hit windows are too noisy for an automatic
+permanent cutoff. `--guard-mode disable` explicitly restores the old shutoff;
+`--guard-mode off` or `--guard-checks 0` disables monitoring. Warnings and opt-in
+shutoffs are recorded in the run manifest.
 To reserve the GPU for training, override with
 `--scorer-schedule ane --scorer-spatial 256`.
 

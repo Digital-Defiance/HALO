@@ -184,3 +184,29 @@ evidence of faster mathematical progress.
 
 The changes improve measured costs and remove correctness problems. They do not
 establish a globally optimal allocation or guarantee a new Heesch record.
+
+## Guard policy correction after the first restarted run
+
+Run `ece5f2c7da0f4ee5aad815de0322b826`, started 2026-10-26 14:57 PDT, exposed a
+problem with the inherited permanent guard. At completed evaluation 47,300
+(15:11:41), its first reconstructed trigger was 0 Hc>=2 outcomes in the last
+2,000 scored checks versus 1 in the last 2,000 random checks. That point-estimate
+ratio is insufficient evidence for permanently removing a proposal source.
+At the inspected snapshot, scored checks had 65/20,140 Hc>=2 outcomes (0.32%)
+versus random's 24/44,178 (0.054%). These cumulative rates do not establish
+future performance or account for generation CPU cost, but show why the sparse
+window should not be treated as proof of model failure. Expensive positives
+can also finish later than cheap negatives in this asynchronous runner.
+
+The new default, `--guard-mode warn`, leaves guided generators enabled and
+reports the heuristic at most once per additional full window of guided checks.
+`disable` retains the old behavior as an explicit opt-in for known model
+runaway; `off` and `--guard-checks 0` stop monitoring. Both warnings and opt-in
+shutoffs include counts and the evaluation number in the append-only run
+manifest. Random search and sweep remain independent controls. A future
+automatic allocation policy should consider uncertainty, novelty/high-Hc yield,
+generation cost and checker cost, and retain a guided probe budget.
+
+The already-running process retains its old guard and disabled state. Restoring
+its scorer requires restarting with the updated launcher; no rebuild or new
+hardware benchmark is needed. The active archive is left to append normally.
