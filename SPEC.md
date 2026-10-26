@@ -116,6 +116,7 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - SAT cost grows steeply with level and shape size. Measure early (M1) and budget.
 - Geometric realization creates unintended neighbour fits that collapse the Heesch number.
 - Anisohedral or aperiodic tilers come out "inconclusive". They are not records. They are also the most expensive shapes to check (§4).
+- **heesch-sat's maxlevel must be well above the target Heesch number.** Its corona loop builds patches *allowing holes* and removes holes only afterwards. "Inconclusive" therefore means "reached maxlevel coronas, possibly with holes", not "reached maxlevel hole-free coronas". In M1, 7 11-hexes were inconclusive at maxlevel 5 although Kaplan's tables (run at maxlevel 7) show 6 of them are non-tilers with Hc = 3 or 4. Consequences: (a) runs aiming at Hc = k need maxlevel ≥ k + 2 or so; (b) an inconclusive shape with no periodic tiling is a *candidate*, not a presumed tiler, and should be escalated to a higher maxlevel; (c) the Epoch verifier's maxlevel 12 could reject a genuine Hc ≥ 7 shape whose holey coronas reach 12. Check candidates for that before submitting. heesch.h also has a FIXME about maxlevel exactly one above the true Heesch number.
 - The span ambiguity in §1. Design to the stricter reading.
 - heesch-sat is experimental code. Cross-check any record with an independent check, e.g. re-verify the witness patch geometry with our own script.
 
@@ -126,6 +127,7 @@ AlphaEvolve-style. Programs that emit shapes or rule systems, scored by the harn
 - 2026-10-25: heesch-sat pinned at commit `d12a527` (2026-08-30). Build needs C++20 and linking `isohedral.o` into `sat`; the upstream Makefile is out of date.
 - 2026-10-25: The agent shell on the Mac is a Linux VM. Native Metal/Neural Engine runs are launched by the owner.
 - 2026-10-25: Gaussian-splat-style continuous relaxations are allowed only as an optional generator in Track D.
+- 2026-10-25: Learned that heesch-sat's "inconclusive" allows holed coronas (see §6). Inconclusive + no periodic tiling now means escalate maxlevel, never presume a tiler.
 - 2026-10-25: Periodic tiling detector via torus exact cover instead of a k-isohedral classifier: simpler, gives proofs, catches any periodic tiling with at most 24 tiles per period.
 - 2026-10-25: Two-pass checking with per-shape time/memory caps. One runaway shape OOM-killed a whole batch on the 7 GB test box; the runner now isolates every shape in its own process.
 
