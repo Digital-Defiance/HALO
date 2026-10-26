@@ -196,6 +196,14 @@ def classify(line, opts, workdir):
             return rec
     if opts.periodic_budget > opts.periodic_quick:
         periodic_stage(rec, opts.periodic_budget)
+    # heesch-sat's "inconclusive" allows holed coronas (SPEC §6): a shape that reaches maxlevel
+    # with holes may still have a small hole-free Heesch number. With no periodic tiling found,
+    # it is a candidate, so re-check it at a higher maxlevel.
+    esc = getattr(opts, "escalate_maxlevel", 0)
+    if rec["status"] == "inconclusive" and esc > opts.maxlevel:
+        first = rec
+        rec = run_one(opts.sat, line, esc, max(opts.timeout_long, opts.timeout), opts.mem_mb, workdir, hh)
+        rec["escalated_from"] = {k: first.get(k) for k in ("status", "maxlevel", "seconds", "periodic")}
     return rec
 
 
@@ -218,6 +226,9 @@ def main():
                     help="seconds for the periodic tiling detector on shapes heesch-sat could not "
                          "settle (timeout, memout, inconclusive); 0 = off. Proven tilers get status 'periodic'")
     ap.add_argument("--periodic-max-t", type=int, default=24, help="max tiles per period to try")
+    ap.add_argument("--escalate-maxlevel", type=int, default=0,
+                    help="if > --maxlevel: re-check shapes still inconclusive after the periodic probes "
+                         "at this maxlevel (inconclusive can hide small hole-free Heesch numbers)")
     ap.add_argument("--hh", action="store_true",
                     help="also compute Hh (outer corona may have holes), as in Kaplan's tables; Epoch only uses Hc")
     ap.add_argument("--periodic-quick", type=float, default=5.0,

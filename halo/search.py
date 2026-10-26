@@ -90,6 +90,8 @@ def main():
     ap.add_argument("--periodic-budget", type=float, default=30.0)
     ap.add_argument("--periodic-quick", type=float, default=3.0)
     ap.add_argument("--periodic-max-t", type=int, default=24)
+    ap.add_argument("--escalate-maxlevel", type=int, default=9,
+                    help="re-check inconclusive shapes with no periodic tiling at this maxlevel")
     args = ap.parse_args()
     rng = random.Random(args.seed)
 
