@@ -218,6 +218,9 @@ def main():
     ap.add_argument("jsonl", help="runner JSONL to draw shapes from")
     ap.add_argument("--n", type=int, default=65536)
     ap.add_argument("--repeats", type=int, default=5)
+    ap.add_argument("--schedules", default="ane,gpu,split", help="ANER schedules to time (comma-separated)")
+    ap.add_argument("--no-mlx", action="store_true", help="skip the MLX GPU reference")
+    ap.add_argument("--label", default="", help="prefix for ANER result lines (e.g. the config being tested)")
     args = ap.parse_args()
 
     import scorer  # featurization lives there; torch is not needed for this path
@@ -237,7 +240,7 @@ def main():
     folded_err = float(np.abs(numpy_forward_folded(fold(W, blocks), blocks, X[:4096]) - ref[:4096]).max())
     print(f"{'(fold check)':14s}: folded network max |diff| vs original {folded_err:.2e}")
 
-    for dt in ("fp32", "fp16"):
+    for dt in (() if args.no_mlx else ("fp32", "fp16")):
         res = mlx_bench(W, blocks, X, ref, args.repeats, dt)
         if res is None:
             print(f"{'MLX GPU':14s}: not installed (pip install mlx), skipped")
@@ -247,7 +250,7 @@ def main():
     g = build_graph(W, blocks)
     Xt = np.ascontiguousarray(X.T)  # ANER wants (channels, columns)
     rank_ref = np.argsort(np.argsort(ref[:, 1]))
-    for name in ("ane", "gpu", "split"):
+    for name in [x for x in args.schedules.split(",") if x]:
         prog, label = compile_schedule(g, name)
         if prog is None:
             print(f"{'ANER ' + name.upper():14s}: skipped: {label}")
@@ -263,7 +266,7 @@ def main():
         got = out[:2].T
         diff = np.abs(got - ref)
         rc = np.corrcoef(np.argsort(np.argsort(got[:, 1])), rank_ref)[0, 1]
-        print(f"{'ANER ' + label:14s}: {n / best:12,.0f} shapes/s on {engines} (compile {prog.compile_ms:.0f} ms); "
+        print(f"{args.label}{'ANER ' + label:14s}: {n / best:12,.0f} shapes/s on {engines} (compile {prog.compile_ms:.0f} ms); "
               f"max |diff| tile {diff[:, 0].max():.3f}, hc {diff[:, 1].max():.3f}; rank corr {rc:.4f}")
         prog.close()
 
