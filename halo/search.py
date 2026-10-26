@@ -114,6 +114,10 @@ def main():
                          "search needs and leaves the GPU free for retraining (mlx = GPU via MLX fp16)")
     ap.add_argument("--candidates", type=int, default=2048, help="mutants generated and scored per refill")
     ap.add_argument("--pick", type=int, default=32, help="best-scoring mutants queued for checking per refill")
+    ap.add_argument("--score-formula", default="hc", choices=["hc", "hc_tile"],
+                    help="rank candidates by predicted hc ('hc', default) or hc*(1-p_tile). High-Heesch shapes "
+                         "look like near-tilers, so penalizing tiler-likeness also throws away the best shapes "
+                         "(held-out search data: top 5% hc>=2 yield 3.6% with 'hc' vs 2.6% with 'hc_tile')")
     ap.add_argument("--random-frac", type=float, default=0.1,
                     help="fraction of checks given to unscored random mutants (keeps the scorer honest)")
     args = ap.parse_args()
@@ -246,7 +250,9 @@ def main():
         out = sc.score(np.stack(feats))
         tot, cnt = {}, {}
         for (tile, hc_hat), canon in zip(out, owner):
-            v = float(hc_hat) * (1.0 - 1.0 / (1.0 + math.exp(-float(tile))))
+            v = float(hc_hat)
+            if args.score_formula == "hc_tile":
+                v *= 1.0 - 1.0 / (1.0 + math.exp(-float(tile)))
             tot[canon] = tot.get(canon, 0.0) + v
             cnt[canon] = cnt.get(canon, 0) + 1
         ranked = sorted(((tot[c] / cnt[c], c) for c in tot), reverse=True)[: args.pick]

@@ -1,6 +1,6 @@
 # HALO status
 
-Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 done. First overnight search (47k checks) found nothing above Hc=3 beyond the seeds. It was throttled by a Python bug (fixed) and the scorer favoured tilers (v2 retraining). ANER GPU path sped up 1.55× (split 2.03M shapes/s, uncommitted in ANER). Next: rerun the search with the fix and scorer v2.**
+Last updated: 2026-10-26 (session 1, Claude). Current phase: **M1 done. First overnight search (47k checks) found nothing above Hc=3 beyond the seeds. It was throttled by a Python bug (fixed). Scorer v2 trained (`scorer_v2_hex.npz`, 22×22 window); ranking by predicted hc alone works best because high-Hc shapes look like near-tilers. ANER GPU path sped up 1.55× (split 2.03M shapes/s) on ANER branch `gpu-perf`, awaiting the owner's rebuild and test. Next: rerun the search with the fix and scorer v2 (Next steps, item 4).**
 
 ## Done
 
@@ -41,10 +41,22 @@ Last updated: 2026-10-25 (session 1, Claude). Current phase: **M1 done. First ov
 
 `results/search_hex_01.jsonl`: 47,157 checks. Non-tilers: Hc 0: 7,865 · 1: 14,279 · 2: 886 · 3: 29 (new shapes, 10–17 cells). Also 23,202 isohedral, 884 periodic, 12 memout. **No new Hc>=4** (the printed Hc=4 is the seed in canonical form). Largest Hc=3: 17 cells. At 18–21 cells: Hc <= 2.
 - **Throughput collapsed** from 18,994 checks in hour 1 to ~2,400/hour later. The checker used only **5.9 of ~128 available core-hours**. Cause: `pick_parent()` re-sorted the whole archive for every candidate (13 ms per pick at 25k entries). **Fixed:** incremental elite list (77,000× faster pick); per-candidate cost is now ~0.14 ms.
-- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2:** all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. The first full run **diverged at epoch 3** (loss 1.26 → 5.8e10): the single Hc=4 shape got sample weight ~259 (√(67k/1)) on top of a 1e-3 peak LR. Fix: weights capped at 20, gradient-norm clip 1.0, peak LR 5e-4. Retraining.
+- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2:** all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. The first full run **diverged at epoch 3** (loss 1.26 → 5.8e10): the single Hc=4 shape got sample weight ~259 (√(67k/1)) on top of a 1e-3 peak LR. Fix: weights capped at 20, gradient-norm clip 1.0, peak LR 5e-4.
+- **Scorer v2 results.** Evaluated on the same held-out 20% of search-log shapes (9,363; base rates: tilers 51.1%, Hc>=2 1.93%). Hc>=2 rate among the top-ranked shapes:
+
+  | Scorer, ranking | top 2% | top 5% | top 20% |
+  | --- | --- | --- | --- |
+  | v1, hc | 2.67% | 3.63% | 2.78% |
+  | v1, hc × (1 − p_tile) | 2.67% | 2.56% | 2.35% |
+  | v2, tilers trained to hc = −1, hc × (1 − p_tile) | 0.53% | 1.07% | 1.23% |
+  | **v2, tilers left out of the hc loss, hc** (shipped) | 2.14% | 3.42% | 3.04% |
+  | same, hc × (1 − p_tile from v1) | 1.60% | 3.63% | 3.15% |
+
+  **Finding: high-Hc shapes look like near-tilers.** Training tilers toward hc = −1 cut tilers among top picks to ~20% but dropped the Hc>=2 yield below random, because the good shapes went down with the tilers. Tilers are cheap to reject (isohedral check ~0.1 s), so rank by predicted hc alone and accept the tilers. v2 held-out AUCs: tiler 0.81, Hc>=2 0.85, Hc>=3 0.97 (17 positives).
+- **Shipped:** `results/models/scorer_v2_hex.npz` (git-ignored; 22×22 window, `--tiler-hc nan` so tilers are ignored in the hc loss, trained on all 184k labelled shapes) and `search.py --score-formula hc` (new default; `hc_tile` restores hc × (1 − p_tile)). v1 ranks about as well at 11–17 cells, but its 16×16 window can't see larger shapes. Scored picks only include shapes that fit the window in some orientation; bigger ones reach the checker only through the `--random-frac` control. Fine for the 18–21-cell target; widen the window before pushing past ~22 cells.
 - Compute split: the periodic detector took 45% of checker time (884 shapes, mean 11 s), non-tilers 43%.
 
-## ANER GPU tuning (2026-10-26; changes in /Volumes/Code/ANER, **uncommitted**)
+## ANER GPU tuning (2026-10-26; ANER branch `gpu-perf`, not yet merged)
 
 Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed straight into shared Metal buffers), lighter GPU lowering (consts as [C,1] columns; diagonal conv → elementwise multiply), `ANER_GPU_CHUNK` (default now 4096), `ANER_GPU_PIPELINE`, `ANER_GPU_OPT_LEVEL`. `make test` passes. Sweep (`scripts/bench_aner_gpu.sh`, scorer v1, 65,536 shapes): GPU-only 1.08M → **1.67M** shapes/s, split 1.47M → **2.03M** (MLX fp16 1.49M). Opt level 1: no gain, and at 8192 it moved work onto the NE. ANER's own split test showed split 40.3 ms vs NE-only 12.2 ms on a deep chain, because greedy claiming let the slower GPU take half the batch. **Fixed on ANER branch `gpu-perf`** (`d6c094e`): split programs time each engine at compile time and refine during batches; an engine claims a chunk only if it can finish it before the other engine could finish everything left; the last active worker never steps aside. Owner to rebuild and re-test. The GPU speedups are commit `2c1122f` on the same branch.
 
