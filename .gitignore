@@ -8,5 +8,3 @@ results/*.txt
 results/*.parts.*
 .DS_Store
 
-# trained scorer weights (large; shared by copying, not git)
-results/models/*.npz

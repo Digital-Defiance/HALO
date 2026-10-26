@@ -41,7 +41,7 @@ Last updated: 2026-10-26 (session 1, Claude). Current phase: **M1 done. First ov
 
 `results/search_hex_01.jsonl`: 47,157 checks. Non-tilers: Hc 0: 7,865 · 1: 14,279 · 2: 886 · 3: 29 (new shapes, 10–17 cells). Also 23,202 isohedral, 884 periodic, 12 memout. **No new Hc>=4** (the printed Hc=4 is the seed in canonical form). Largest Hc=3: 17 cells. At 18–21 cells: Hc <= 2.
 - **Throughput collapsed** from 18,994 checks in hour 1 to ~2,400/hour later. The checker used only **5.9 of ~128 available core-hours**. Cause: `pick_parent()` re-sorted the whole archive for every candidate (13 ms per pick at 25k entries). **Fixed:** incremental elite list (77,000× faster pick); per-candidate cost is now ~0.14 ms.
-- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2:** all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. The first full run **diverged at epoch 3** (loss 1.26 → 5.8e10): the single Hc=4 shape got sample weight ~259 (√(67k/1)) on top of a 1e-3 peak LR. Fix: weights capped at 20, gradient-norm clip 1.0, peak LR 5e-4.
+- **Scorer v1 preferred tilers:** scored picks were 53% tilers vs 38% for random picks. Hc>=2 yield 2.0% vs 1.7% random, a weak benefit. Cause: tilers were never part of the hc target, and the tiler head is weak. **Scorer v2:** all 184k labelled shapes (11-hexes + search log), 22×22 window (512 inputs), tilers trained toward hc = −1, search-style evaluation. The first full run **diverged at epoch 3** (loss 1.26 → 5.8e10): the single Hc=4 shape got sample weight ~259 (√(67k/1)) on top of a 1e-3 peak LR. Fix: weights capped at 20, gradient-norm clip 1.0, peak LR 5e-4. With the fix, training is stable: 12 epochs, loss 1.25 → 1.12 with no spikes (v2 variant with tilers at hc = −1, same settings).
 - **Scorer v2 results.** Evaluated on the same held-out 20% of search-log shapes (9,363; base rates: tilers 51.1%, Hc>=2 1.93%). Hc>=2 rate among the top-ranked shapes:
 
   | Scorer, ranking | top 2% | top 5% | top 20% |
@@ -53,7 +53,7 @@ Last updated: 2026-10-26 (session 1, Claude). Current phase: **M1 done. First ov
   | same, hc × (1 − p_tile from v1) | 1.60% | 3.63% | 3.15% |
 
   **Finding: high-Hc shapes look like near-tilers.** Training tilers toward hc = −1 cut tilers among top picks to ~20% but dropped the Hc>=2 yield below random, because the good shapes went down with the tilers. Tilers are cheap to reject (isohedral check ~0.1 s), so rank by predicted hc alone and accept the tilers. v2 held-out AUCs: tiler 0.81, Hc>=2 0.85, Hc>=3 0.97 (17 positives).
-- **Shipped:** `results/models/scorer_v2_hex.npz` (git-ignored; 22×22 window, `--tiler-hc nan` so tilers are ignored in the hc loss, trained on all 184k labelled shapes) and `search.py --score-formula hc` (new default; `hc_tile` restores hc × (1 − p_tile)). v1 ranks about as well at 11–17 cells, but its 16×16 window can't see larger shapes. Scored picks only include shapes that fit the window in some orientation; bigger ones reach the checker only through the `--random-frac` control. Fine for the 18–21-cell target; widen the window before pushing past ~22 cells.
+- **Shipped:** `results/models/scorer_v2_hex.npz` (Git LFS; 22×22 window, `--tiler-hc nan` so tilers are ignored in the hc loss, trained on all 184k labelled shapes) and `search.py --score-formula hc` (new default; `hc_tile` restores hc × (1 − p_tile)). v1 ranks about as well at 11–17 cells, but its 16×16 window can't see larger shapes. Scored picks only include shapes that fit the window in some orientation; bigger ones reach the checker only through the `--random-frac` control. Fine for the 18–21-cell target; widen the window before pushing past ~22 cells.
 - Compute split: the periodic detector took 45% of checker time (884 shapes, mean 11 s), non-tilers 43%.
 
 ## ANER GPU tuning (2026-10-26; ANER branch `gpu-perf`, not yet merged)
@@ -84,10 +84,10 @@ Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed str
 4. **Owner: first long native search** (all cores, scorer on the Neural Engine; stop any time with Ctrl-C and rerun the same command to resume):
    ```sh
    cd /Volumes/Code/HALO
-   PYTHONPATH=/Volumes/Code/ANER/python python3 halo/search.py --seeds results/seeds_hex11_hc3plus.jsonl --seed-min-hc 3 --log results/search_hex_01.jsonl --scorer results/models/scorer_hex11_b8.npz --scorer-schedule ane --max-cells 30 --prefer-min-cells 18 --maxlevel 7 --escalate-maxlevel 9 --mem-mb 3000 --hours 8
+   PYTHONPATH=/Volumes/Code/ANER/python python3 halo/search.py --seeds results/seeds_hex11_hc3plus.jsonl --seed-min-hc 3 --log results/search_hex_01.jsonl --scorer results/models/scorer_v2_hex.npz --scorer-schedule ane --score-formula hc --max-cells 30 --prefer-min-cells 18 --maxlevel 7 --escalate-maxlevel 9 --mem-mb 3000 --hours 8
    ```
-   Goals: measure throughput at larger sizes, see how high Hc gets at 18+ cells, and collect labelled larger shapes to retrain the scorer.
-5. **Agent:** retrain the scorer on search logs with a bigger window (22×22 = 484 channels) for larger shapes, training on the GPU (MLX) or in the cloud. Measure scored-vs-random yield from the search log.
+   Run 1 (2026-10-25, scorer v1, slow parent picking) is analysed above. Run 2 resumes the same log with the throughput fix and scorer v2. Goals: keep all cores busy (the hourly rate should stay near hour 1's ~19k), see how high Hc gets at 18+ cells, compare `search-scored` vs `search` Hc>=2 yield, and collect larger labelled shapes.
+5. **Done for v2 (see above); repeat after each long run:** retrain on all logs (`halo/scorer.py <comma-separated JSONLs> --window 22 --tiler-hc nan --epochs 12 --eval-source <index of the newest log> --save <path>`), compare against the current model on held-out search shapes, and ship only if the top-5% Hc>=2 yield improves.
 6. **Agent:** Track B as a search over markings (bump/nick per edge) instead of random enumeration, on 4–6-cell bases.
 7. **Owner, optional:** PDFs of Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 (*Math. Intelligencer* 43(3)) into `refs/` for Track A2.
 8. **Agent:** finish literature check A3 for 2024–2026 (as of Kaplan 2023, no polyform with H >= 5 is known). Then start Track B with the cheap route: scale small marked polyforms (bumps/nicks as sub-cells) and run heesch-sat on them.
@@ -97,6 +97,8 @@ Agent changes in libaner: pipelined GPU worker (two chunks in flight, packed str
 - Repo: `https://github.com/Digital-Defiance/HALO` (branch `main`).
 - The agent commits in `/Volumes/Code/HALO` (and in ANER on branch `gpu-perf`) through its Linux shell, with delete permission so git can clean up lock files. Commits are authored as `Jessica Mulein <jessica@digitaldefiance.org>` with a `Co-Authored-By: Claude` trailer. HALO commits from 806cf07 to 1df9296 used the owner's Gmail address; 806cf07 is already pushed, so history was not rewritten. The owner pushes from macOS.
 - `results/*.txt` (raw `gen` dumps) and `build/` are git-ignored. JSONL results are committed.
+- Scorer weights (`results/models/*.npz`, ~17 MB each) are in **Git LFS** (`.gitattributes`). Any machine that clones, pulls or pushes needs git-lfs (`brew install git-lfs`, then `git lfs install` once). Without it, the `.npz` files are small pointer files and `np.load` fails on them. The agent's Linux shell has no git-lfs package; it uses a static binary in `~/bin` and runs git with `PATH=$HOME/bin:$PATH`.
+- Retrained models get a new file name (`scorer_v3_hex.npz`, ...) rather than overwriting, so older runs stay reproducible.
 
 ## Environment
 
