@@ -98,12 +98,12 @@ def parse_output(text):
     return rec
 
 
-def run_one(sat, line, maxlevel, timeout, mem_mb, workdir):
+def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
     fd, inp = tempfile.mkstemp(suffix=".txt", dir=workdir)
     with os.fdopen(fd, "w") as fh:
         fh.write(line + "\n")
     out = inp[:-4] + ".out.txt"
-    cmd = [sat, "-isohedral", "-show", "-maxlevel", str(maxlevel), inp, "-o", out]
+    cmd = [sat, "-isohedral", "-show", "-maxlevel", str(maxlevel)] + (["-hh"] if hh else []) + [inp, "-o", out]
     start = time.monotonic()
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     peak = 0.0
@@ -181,7 +181,8 @@ def classify(line, opts, workdir):
             return True
         return False
 
-    rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout, opts.mem_mb, workdir)
+    hh = getattr(opts, "hh", False)
+    rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout, opts.mem_mb, workdir, hh)
     grid = line.split()[0].rstrip("?")
     if opts.periodic_budget <= 0 or grid not in ("O", "H") or rec["status"] not in UNSETTLED:
         return rec
@@ -189,7 +190,7 @@ def classify(line, opts, workdir):
         return rec
     if rec["status"] == "timeout" and opts.timeout_long > opts.timeout:
         quick = rec
-        rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout_long, opts.mem_mb, workdir)
+        rec = run_one(opts.sat, line, opts.maxlevel, opts.timeout_long, opts.mem_mb, workdir, hh)
         rec["quick"] = {k: quick.get(k) for k in ("status", "seconds", "periodic")}
         if rec["status"] not in UNSETTLED:
             return rec
@@ -217,6 +218,8 @@ def main():
                     help="seconds for the periodic tiling detector on shapes heesch-sat could not "
                          "settle (timeout, memout, inconclusive); 0 = off. Proven tilers get status 'periodic'")
     ap.add_argument("--periodic-max-t", type=int, default=24, help="max tiles per period to try")
+    ap.add_argument("--hh", action="store_true",
+                    help="also compute Hh (outer corona may have holes), as in Kaplan's tables; Epoch only uses Hc")
     ap.add_argument("--periodic-quick", type=float, default=5.0,
                     help="budget for the quick periodic probe right after the first heesch-sat attempt")
     ap.add_argument("--timeout-long", type=float, default=0.0,
