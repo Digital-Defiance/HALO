@@ -78,6 +78,19 @@ Fixes in `search.py`:
 - Owner restarted without the scorer as a stopgap.
 - **Kaplan's published data:** every polyhex with Hc>=3 or Hh>=3 for 11–17 cells is at `https://cs.uwaterloo.ca/~csk/heesch/hex/<n>hex_3up.txt` (plus PDFs and `heesch_dataset.tar.gz`). That includes all Hc=4 polyhexes: one each at 11, 13, 16 and 17 cells, two at 15. These are the right parents for 18+ cells. The agent sandboxes can't reach the site (proxy 403), so the owner downloads them into `refs/kaplan/` (raw files git-ignored; cite Kaplan 2022).
 
+## Kaplan's data imported; memout finding; run 3 plan (2026-10-26)
+
+- `results/seeds_kaplan_hex_3up.jsonl` (via `halo/import_kaplan.py` from `refs/kaplan/<n>hex_3up.txt`, which the owner downloaded; the 17-hex file 403s for scripted requests and had to be fetched by hand). It holds 1,263 polyhexes with Hc>=3 or Hh>=3 at 11–17 cells. Hc>=3: 37/10/27/22/179/54/161 at 11–17 cells. Hc=4: one each at 11, 13, 16, 17 and two at 15, matching Kaplan's table.
+- **Cross-checks:** Kaplan's 11-cell Hc>=3 set is identical to our M1 result (same 38 shapes, same Hc), so coordinates and canonical forms agree. Of 60 Kaplan shapes our searches also checked, 55 have the same Hc. **The other 5 were memouts at our 3 GB cap: two Hc=4 (13 and 15 cells) and three Hc=3.** High-Hc shapes need more memory, so a fixed cap throws away exactly the shapes we want. 5 of runs 1–2's first 12 memouts were Hc>=3.
+- `search.py` additions:
+  - `--retry-jobs 2 --retry-mem-mb 12000 --retry-timeout 1200`: memout/timeout shapes are re-checked with a bigger budget, a few at a time. Ones still waiting at the stop are logged with their first status.
+  - `--retry-archived`: re-check memout/timeout rows already in the log.
+  - `--min-cells N`: parents below N are first grown with random frontier cells.
+  - `--parent-min-cells`: parents only from shapes at least this large.
+  - Fitness prefers larger parents on ties when `--prefer-min-cells` is set.
+- **Run 3 (planned):** Kaplan seeds, parents >= 15 cells, checks only 18+ cells (beyond Kaplan's enumeration), memout retries on, scorer v3 at `--random-frac 0.5` so the guard and the report get a live A/B.
+- **Bake-off A** (cloud, `halo/bakeoff.py`, parents = Hc>=3 shapes of 7–17 cells from runs 1–2 and the 11-hex seeds, same parents per generator; interim at ~500 per arm). Hc>=2 rate: random 0.78%, scorer-v3 picks 2.38%, splat 0/31. At 12+ cells: random 0.27%, v3 1.95%. **v3 beats random about 3×.** Generation cost per new shape on 2 cloud cores: random ~1 ms, v3 108 ms, splat 18 s (it runs dry once the parents' easy neighbours are taken), relax-cell 27 s.
+
 ## Continuous relaxation ("Gaussian splat") generator (2026-10-26, experimental, off by default)
 
 `halo/relax.py`: start from an elite shape, make occupancy soft, follow the scorer's gradient, snap back to cells (at most `--relax-max-flips` per round), repair (largest connected piece, holes filled, Epoch limits), and hand the distinct shapes to the checker. Modes: `cell` (one logit per cell near the shape) and `splat` (one Gaussian blob per starting cell; centres, widths and strengths move, so whole lobes shift together). Gradients come from MLX on a Metal GPU when available, otherwise from NumPy with a hand-written backward pass. `--selftest` checks both against finite differences (they agree). Wired into `search.py` as `--relax-frac` (default 0) with `--relax-mode cell,splat`. Shapes are logged as generator `search-relax-<mode>`, so any run doubles as a bake-off.

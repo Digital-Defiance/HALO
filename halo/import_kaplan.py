@@ -8,17 +8,25 @@ every free polyhex of that size with Hc >= 3 or Hh >= 3). Download into refs/kap
 Usage:
   python3 halo/import_kaplan.py refs/kaplan/*hex_3up.txt --out results/seeds_kaplan_hex_3up.jsonl
 
+Two input formats are accepted: heesch-sat `sat -show` records (shape line `H x y ...`, then a
+status line such as `~ 4 4`), and the web data files (a bare coordinate line, then a line
+`Hc = 4 Hh = 4`; the grid comes from --grid).
+
 Writes one JSONL row per shape: canonical form, grid, cells, status, hc, hh, generator
 "kaplan2022", source file. search.py --seeds reads it directly (--seed-min-hc picks the level).
 """
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shape as shp  # noqa: E402
 from runner import STATUS_CODES  # noqa: E402
+
+
+HC_LINE = re.compile(r"^Hc\s*=\s*(-?\d+)\s+Hh\s*=\s*(-?\d+)")
 
 
 def records(path, grid="H"):
@@ -29,6 +37,10 @@ def records(path, grid="H"):
         lines = [ln.strip() for ln in fh if ln.strip()]
     for i, ln in enumerate(lines[:-1]):
         toks = ln.split()
+        m = HC_LINE.match(lines[i + 1])
+        if m and len(toks) >= 2 and len(toks) % 2 == 0 and all(t.lstrip("-").isdigit() for t in toks):
+            yield f"{grid} {ln}", "nontiler", int(m.group(1)), int(m.group(2))
+            continue
         if toks[0].rstrip("?") != grid or len(toks) < 3 or len(toks) % 2 == 0:
             continue
         if not all(t.lstrip("-").isdigit() for t in toks[1:]):

@@ -78,11 +78,14 @@ PREFER_MIN_CELLS = 0  # set from --prefer-min-cells
 
 def fitness(rec):
     """Sort key: higher is better. Non-tilers by hc, then (optionally) size in unexplored territory,
-    then hh, then checker time at the deciding level."""
+    then hh, then (with a size target) closeness to it, then checker time at the deciding level."""
     if rec.get("status") != "nontiler" or rec.get("hc") is None:
-        return (-1, 0, -1, 0.0)
-    big = 1 if PREFER_MIN_CELLS and (rec.get("cells") or 0) >= PREFER_MIN_CELLS else 0
-    return (rec["hc"], big, rec.get("hh") or rec["hc"], min(rec.get("seconds", 0.0), 600.0))
+        return (-1, 0, -1, 0, 0.0)
+    cells = rec.get("cells") or 0
+    big = 1 if PREFER_MIN_CELLS and cells >= PREFER_MIN_CELLS else 0
+    # with a size target, larger parents win ties (fewer cells to grow, closer to the target)
+    near = min(cells, PREFER_MIN_CELLS) if PREFER_MIN_CELLS else 0
+    return (rec["hc"], big, rec.get("hh") or rec["hc"], near, min(rec.get("seconds", 0.0), 600.0))
 
 
 def main():
@@ -92,7 +95,12 @@ def main():
     ap.add_argument("--log", required=True)
     ap.add_argument("--grid", default="", help="restrict to one grid (O or H); default: from seeds")
     ap.add_argument("--max-cells", type=int, default=40)
-    ap.add_argument("--min-cells", type=int, default=4)
+    ap.add_argument("--min-cells", type=int, default=4,
+                    help="smallest shape to check. Parents below it are first grown (random frontier cells) up to "
+                         "it, so e.g. --min-cells 18 with 15-17-cell parents explores 18+ cells, the sizes beyond "
+                         "Kaplan's exhaustive polyhex enumeration")
+    ap.add_argument("--parent-min-cells", type=int, default=0,
+                    help="parents (elite and explore) only from shapes with at least this many cells")
     ap.add_argument("--elite", type=int, default=64, help="parents are drawn from the top-N archive")
     ap.add_argument("--prefer-min-cells", type=int, default=0,
                     help="among equal hc, prefer shapes with at least this many cells (e.g. 18 for hexes: "
@@ -116,6 +124,14 @@ def main():
     ap.add_argument("--periodic-max-t", type=int, default=24)
     ap.add_argument("--escalate-maxlevel", type=int, default=9,
                     help="re-check inconclusive shapes with no periodic tiling at this maxlevel")
+    ap.add_argument("--retry-jobs", type=int, default=2,
+                    help="shapes that hit the memory or time cap are re-checked, this many at a time, with "
+                         "--retry-mem-mb and --retry-timeout (0 = log them as memout/timeout). High-Hc shapes "
+                         "need more memory: runs 1-2 lost two Hc=4 and three Hc=3 shapes to the 3 GB cap")
+    ap.add_argument("--retry-mem-mb", type=float, default=12000.0)
+    ap.add_argument("--retry-timeout", type=float, default=1200.0)
+    ap.add_argument("--retry-archived", action="store_true",
+                    help="also re-check memout/timeout shapes already in the log (within --min/--max-cells)")
     # learned scorer prefilter (Track D)
     ap.add_argument("--scorer", default="", help="scorer weights (.npz from scorer.py); enables the prefilter")
     ap.add_argument("--scorer-schedule", default="ane", choices=["ane", "split", "gpu", "mlx", "numpy"],
@@ -191,9 +207,11 @@ def main():
     for s in seeds:
         g, cells = shp.parse(s["shape"])
         canon = shp.canonical(g, cells)
-        if canon not in archive:
+        old = archive.get(canon)
+        if old is None or (old.get("status") not in ("nontiler", "isohedral", "periodic")
+                           and s.get("status") == "nontiler"):
             rec = dict(s)
-            rec.update({"canon": canon, "shape": canon, "parent": None, "op": "seed"})
+            rec.update({"canon": canon, "shape": canon, "parent": None, "op": "seed", "cells": len(cells)})
             archive[canon] = rec
     print(f"{len(seeds)} seeds on grid {grid}; archive {len(archive)}", flush=True)
 
@@ -207,14 +225,21 @@ def main():
     # Parents: all non-tilers (`live`) and the top-N of them (`elite`). Both are kept up to date
     # incrementally; re-sorting the whole archive per candidate made the first overnight run
     # spend >95% of its time in Python with the checker cores idle.
-    live = [r for r in archive.values() if r.get("status") == "nontiler"]
-    explore_pool = [r for r in live if (r.get("hc") or 0) >= args.explore_min_hc]
+    def ncells(r):
+        return r.get("cells") or (len(r["canon"].split()) - 1) // 2
+
+    live = [r for r in archive.values() if r.get("status") == "nontiler"]  # all non-tilers (stats)
+    parent_pool = [r for r in live if ncells(r) >= args.parent_min_cells]
+    explore_pool = [r for r in parent_pool if (r.get("hc") or 0) >= args.explore_min_hc]
     elite_state = {"elite": [], "dirty": True}
 
     def note_result(row):
         if row.get("status") != "nontiler":
             return
         live.append(row)
+        if ncells(row) < args.parent_min_cells:
+            return
+        parent_pool.append(row)
         if (row.get("hc") or 0) >= args.explore_min_hc:
             explore_pool.append(row)
         el = elite_state["elite"]
@@ -222,12 +247,12 @@ def main():
             elite_state["dirty"] = True
 
     def pick_parent():
-        if not live:
+        if not parent_pool:
             return None
         if rng.random() < args.explore and explore_pool:
             return rng.choice(explore_pool)
         if elite_state["dirty"]:
-            elite_state["elite"] = heapq.nlargest(args.elite, live, key=fitness)
+            elite_state["elite"] = heapq.nlargest(args.elite, parent_pool, key=fitness)
             elite_state["dirty"] = False
         return rng.choice(elite_state["elite"])
 
@@ -238,8 +263,18 @@ def main():
             if parent is None:
                 return None
             g, cells = shp.parse(parent["canon"])
+            grown = 0
+            if len(cells) < args.min_cells:  # grow small parents up to the size floor first
+                s = set(cells)
+                nb = shp.NEIGHBOURS[g]
+                while len(s) < args.min_cells:
+                    s.add(rng.choice(sorted({(x + dx, y + dy) for x, y in s for dx, dy in nb} - s)))
+                    grown += 1
+                cells = sorted(s)
             steps = 1 + int(rng.random() < 0.3) + int(rng.random() < 0.1)
             new, op = mutate(g, cells, rng, steps)
+            if grown:
+                op = f"grow{grown}+{op}"
             if not (args.min_cells <= len(new) <= args.max_cells):
                 continue
             ok, problems, info = shp.check(line_of(g, new))
@@ -386,31 +421,62 @@ def main():
         if op.startswith("relax-"):
             return "search-" + op.split(":")[0]
         return "search-scored" if pred is not None else "search"
-    with open(args.log, "a") as logfh, ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        running = {}
+
+    # Shapes that hit the memory/time cap go to a retry queue with a bigger budget (few at a time).
+    retry_opts = argparse.Namespace(**vars(args))
+    retry_opts.mem_mb = args.retry_mem_mb
+    retry_opts.timeout = args.timeout_long
+    retry_opts.timeout_long = args.retry_timeout
+    retry_q = collections.deque()
+    if args.retry_jobs and args.retry_archived:
+        for r in list(archive.values()):
+            if r.get("status") in ("memout", "timeout") and args.min_cells <= ncells(r) <= args.max_cells:
+                first = {k: r.get(k) for k in ("status", "seconds", "peak_rss_mb")}
+                retry_q.append((r["canon"], r.get("parent"), r.get("op") or "", r.get("pred"), first))
+        print(f"re-checking {len(retry_q)} archived memout/timeout shapes with {args.retry_mem_mb:.0f} MB", flush=True)
+
+    with open(args.log, "a") as logfh, ThreadPoolExecutor(max_workers=args.jobs + args.retry_jobs) as pool:
+        running = {}  # future -> (canon, parent, op, pred, first result if this is a retry else None)
+        n_retry = 0
         t0 = time.monotonic()
         while True:
             stop = time.monotonic() > deadline or (args.max_evals and evals >= args.max_evals)
-            while not stop and len(running) < args.jobs:
+            while not stop and retry_q and n_retry < args.retry_jobs:
+                item = retry_q.popleft()
+                running[pool.submit(runner.classify, item[0], retry_opts, workdir)] = item
+                n_retry += 1
+            while not stop and len(running) - n_retry < args.jobs:
                 prop = next_job()
                 if prop is None:
                     break
                 canon, parent, op, pred = prop
-                running[pool.submit(runner.classify, canon, args, workdir)] = (canon, parent, op, pred)
+                running[pool.submit(runner.classify, canon, args, workdir)] = (canon, parent, op, pred, None)
             if not running:
                 break
             done, _ = wait(list(running), return_when=FIRST_COMPLETED)
             for fut in done:
-                canon, parent, op, pred = running.pop(fut)
+                canon, parent, op, pred, first = running.pop(fut)
+                if first is not None:
+                    n_retry -= 1
                 try:
                     rec = fut.result()
                 except Exception as exc:
                     rec = {"status": "error", "hc": None, "hh": None, "stderr": repr(exc)}
+                if first is None and args.retry_jobs and rec.get("status") in ("memout", "timeout"):
+                    retry_q.append((canon, parent, op, pred,
+                                    {k: rec.get(k) for k in ("status", "seconds", "peak_rss_mb")}))
+                    print(f"  {rec['status']} at {args.mem_mb:.0f} MB / {args.timeout_long:.0f} s, queued for a "
+                          f"{args.retry_mem_mb:.0f} MB re-check ({len(retry_q)} waiting): {canon}", flush=True)
+                    continue
                 record = rec.pop("record", None)
                 row = {"canon": canon, "shape": canon, "grid": grid, "cells": (len(canon.split()) - 1) // 2,
                        "parent": parent, "op": op, "generator": generator_of(op, pred),
                        "pred": None if pred is None else round(pred, 4), "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
                 row.update(rec)
+                if first is not None:
+                    row["retried_from"] = first
+                    print(f"  re-check done: {row['status']} hc={row.get('hc')} ({row['cells']} cells, "
+                          f"{row.get('seconds', 0):.0f} s, {row.get('peak_rss_mb') or 0:.0f} MB): {canon}", flush=True)
                 if row["status"] == "nontiler" and (row["hc"] or 0) >= 3:
                     row["witness"] = record
                 with lock:
@@ -445,6 +511,15 @@ def main():
                                 print(f"     {gen:19s}: {n_all} checked, hc>=2 {n_good} ({100*n_good/n_all:.1f}%), "
                                       f"tilers {100*n_tile/n_all:.0f}%" + ("  [switched off]" if gen in disabled else ""),
                                       flush=True)
+        for canon, parent, op, pred, first in retry_q:  # not re-checked before the stop: keep them findable
+            row = {"canon": canon, "shape": canon, "grid": grid, "cells": (len(canon.split()) - 1) // 2,
+                   "parent": parent, "op": op, "generator": generator_of(op, pred), "hc": None, "hh": None,
+                   "pred": None if pred is None else round(pred, 4), "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            row.update(first)
+            logfh.write(json.dumps(row) + "\n")
+        if retry_q:
+            print(f"{len(retry_q)} shapes still waiting for a re-check were logged as {first['status']}; "
+                  f"rerun with --retry-archived to check them", flush=True)
     print(f"done: {evals} evaluations; best hc={best_seen[0]}")
     top = sorted((r for r in archive.values() if r.get("status") == "nontiler"), key=fitness, reverse=True)[:10]
     for r in top:
