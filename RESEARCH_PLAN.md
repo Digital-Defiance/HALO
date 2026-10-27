@@ -28,10 +28,10 @@ not a theorem about all Hc=4 polyhexes. Two-edit improvements exist in the contr
    `./scripts/search_frontier.sh --sweep2-max-defect 0.03 --seeds results/seeds_kaplan_hex_3up.jsonl,results/defect_v2_remeasure_20261027.jsonl`.
    Seed files now supply v2 defects (commit 8e92602). The native run
    `920d77d84a3f4190819d2649373f53cb` was verified to use these options. Leave it running.
-2. **Finish the existing v2 remeasure** (`results/defect_v2_remeasure_20261027.jsonl`;
-   resumable). Let the other AI's worker finish; do not launch a duplicate.
-   Verify/copy the final file, then do one planned restart to load the complete
-   seed set. A running search reads its seed files at startup, not continuously.
+2. **v2 remeasure finished** (2026-10-27 23:55 UTC, commit dfb6e76): 728/728 rows,
+   635 measured, 93 unresolved at the 180 s cap, **35 sweep2 parents**; best Hc=3 is
+   now 20 cells 1/170. Do one planned restart of the sweep to load the complete
+   seed set. Optional native retry of the unresolved rows: see `STATUS.md`. A running search reads its seed files at startup, not continuously.
 3. **Review sweep2 yield** per parent (Hc>=3/Hc>=4 finds per 1,000 checks) before
    another long run. Read-only report:
    `.venv/bin/python halo/gen_report.py results/search_hex_01.jsonl --latest-run --generator search-sweep2 --by-parent`.
@@ -64,7 +64,7 @@ These are proposed transfers, not established Heesch constructions. The first
 implementation gate is an inner-arrangement control; mechanism/compiler work
 is a separate route to a genuinely new design family.
 
-Keep the active sweep and the other AI's v2 remeasure running. In addition to
+Keep the active sweep running (the v2 remeasure has finished). In addition to
 those empirical tracks, pursue controlled experiments on these levers:
 
 | Lever | Next test or gate |
