@@ -1,6 +1,21 @@
 # HALO status
 
-Last updated: 2026-10-27 (Codex: inverse-repair prototype and pilot completed; inner-hole defect bug fixed. Claude: hexapillar construction pilot, negative). Current phase: **Best certified Hc is still 4. Eighteen controlled inverse-repair models were UNSAT within their tested bounds. The old 5/169 near miss had a holed inner ring; corrected score 7/171. Direct realizations of Mann's hexapillar fail inside the limits (`CONSTRUCTION_PILOT.md`). Next: two-edit sweep around certified Hc=4 shapes; compact marking synthesis is open research.**
+Last updated: 2026-10-27 evening (Claude: v2 defect remeasure running, sweep2 seed fix, repair positive control negative). Current phase: **Best certified Hc is still 4. Fixed-layout inverse repair failed a positive control (120/120 UNSAT on Hc=3 shapes known to be two edits from Hc=4), so it is shelved as a generator. Next: two-edit sweep seeded with v2-remeasured near misses; finish the remeasure; then test cost scaling on larger (40–60-cell) shapes.**
+
+## Handoff (2026-10-27 evening, Claude): remeasure, sweep2 seeding, repair control
+
+- **v2 defect remeasure (running, cloud x86 4 cores/15 GB):** `halo/add_defects.py` over all 728 archived Hc>=3 shapes with >=15 cells (1 Hc=4, rest Hc=3), best legacy near misses first, 4 jobs, 5 GB/180 s caps. Output: `results/defect_v2_remeasure_20261027.jsonl` (append-only; copied to the Mac as a growing superset). At 313/728: 285 measured, 28 unresolved at the caps, 18 Hc=3 shapes at or under the 0.03 sweep2 threshold. The Hc=4 tile reproduces **7/171**. Best Hc=3 near misses (v2, exact): 22 cells **1/163**, 21 cells 2/218, 19 cells 2/148, 20 cells 3/178. Cloud jobs started with `setsid nohup` died whenever the session went idle; launching through the agent's tracked background task worked. If the run is incomplete, resume natively with the same command (it skips finished rows; `build/hc3up_thread.jsonl` holds the archive's Hc>=3 rows, git-ignored):
+  ```sh
+  .venv/bin/python halo/add_defects.py build/hc3up_thread.jsonl --out results/defect_v2_remeasure_20261027.jsonl --min-hc 3 --min-cells 15 --jobs 4 --mem-mb 5000 --timeout 180
+  ```
+- **Sweep2 seeding fix (commit 8e92602):** the search only read defects from the main archive, so remeasured near misses never became two-edit parents. Seed files with v2 defects now copy `defect`, `ring`, `defect_exact`, `defect_seconds`, `defect_version` onto archive rows that only have legacy values (same hc). Verified: a legacy-only Hc=3 shape gets no sweep2 parent; with the remeasured seed it does. 41 tests pass. Launch:
+  ```sh
+  ./scripts/search_frontier.sh --sweep2-max-defect 0.03 --seeds results/seeds_kaplan_hex_3up.jsonl,results/defect_v2_remeasure_20261027.jsonl
+  ```
+  Restart it after the remeasure grows to pick up more parents (the archive resumes losslessly; never run two searches on one log).
+- **Repair positive control (commit c8cc857, details in `REPAIR_PILOT.md`):** no Hc=3 polyhex in Kaplan's set is one edit from an Hc=4; the 21-cell Hc=4 tile's 38 add/remove neighbours are all Hc<=2 or tilers. 22 Kaplan Hc=3 shapes are two edits from an Hc=4 (`scripts/repair_control_pairs.py`); on 20 exported layouts, `patch_repair.py` at 2/4/6 edits in fixed and widest regimes gave **120/120 UNSAT**. The three best archive near misses were UNSAT too. Encoding sanity: the 0-edit model on a fully covered layout is SAT. Conclusion: improved shapes need different corona placements; repairing a fixed partial patch cannot find them. Do not use the current tool as a generator; a viable version must search placements with the tile.
+- **Git from the Mac's Linux VM:** it has no git-lfs, so plain `git add`/`commit` fails on the modified LFS archive. Commit with `git -c filter.lfs.process= -c filter.lfs.clean=cat -c filter.lfs.smudge=cat -c filter.lfs.required=false -c core.hooksPath=/dev/null ...` and then remove `.git/*.lock`. The unclaimed 2-line change in `results/search_hex_01.jsonl` is still left uncommitted.
+- **Running/next/blocked:** remeasure running in the cloud; the owner is starting the seeded sweep on the Mac. Next: finish remeasure, restart sweep, review sweep2 yield per parent, then a small native cost-scaling test of 40–60-cell candidates using the 64 GB headroom (Hc>=7 likely needs 100+ cells). Nothing blocked.
 
 ## Construction handoff (2026-10-27, Claude): Mann hexapillar realizations
 

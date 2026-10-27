@@ -11,6 +11,29 @@ corona near miss; the corrected measurement is 7/171. See `REPAIR_PILOT.md`.
 The marked construction was then tried directly and failed inside the limits;
 see the handoff below and `CONSTRUCTION_PILOT.md`.
 
+## Handoff (2026-10-27 evening): updated next steps
+
+Supersedes the order in the 11:50 PT handoff below; its housekeeping still applies.
+Full detail is in `STATUS.md`.
+
+**State.** Best certified result is still the 21-cell Hc=4 polyhex (v2 defect
+7/171). No Hc>=5. New negative result: fixed-layout inverse repair fails a positive
+control (120/120 UNSAT on Hc=3 shapes known to be two edits from Hc=4;
+`REPAIR_PILOT.md`). Hc=4 polyhexes have no Hc=3 one-edit neighbours, so one-edit
+hill climbing cannot reach them; two-edit moves can.
+
+**Next, in order:**
+1. **Seeded two-edit sweep** (owner, native):
+   `./scripts/search_frontier.sh --sweep2-max-defect 0.03 --seeds results/seeds_kaplan_hex_3up.jsonl,results/defect_v2_remeasure_20261027.jsonl`.
+   Seed files now supply v2 defects (commit 8e92602). Restart when the remeasure file grows.
+2. **Finish the v2 remeasure** (`results/defect_v2_remeasure_20261027.jsonl`; resumable).
+3. **Review sweep2 yield** per parent (Hc>=3/Hc>=4 finds per 1,000 checks) before
+   another long run; drop parents whose balls are exhausted without hits.
+4. **Cost scaling at 40–60 cells** on the Mac's 64 GB: Hc>=7 probably needs 100+
+   cells, and nothing above 30 cells has been measured.
+5. **Shelved:** fixed-layout inverse repair (needs placement search to be useful);
+   direct Mann/Bašić realizations (`CONSTRUCTION_PILOT.md`).
+
 ## Handoff (2026-10-27, 11:50 PT): where things stand and what to do next
 
 **State.** Best certified result is Hc=4: the 21-cell polyhex in
