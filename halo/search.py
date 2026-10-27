@@ -283,6 +283,14 @@ def main():
             rec = dict(s)
             rec.update({"canon": canon, "shape": canon, "parent": None, "op": "seed", "cells": len(cells)})
             archive[canon] = rec
+        elif (s.get("defect_version", 1) >= 2 and s.get("defect") is not None
+              and old.get("hc") == s.get("hc") and old.get("defect_version", 1) < 2):
+            # A remeasured seed file (halo/add_defects.py) supplies version-2 defects for
+            # shapes already in the archive, so they can qualify as sweep2 parents.
+            old = archive[canon] = dict(old)
+            for k in ("defect", "ring", "defect_exact", "defect_seconds", "defect_version"):
+                if k in s:
+                    old[k] = s[k]
     print(f"{len(seeds)} seeds on grid {grid}; archive {len(archive)}", flush=True)
 
     run_id = uuid.uuid4().hex
