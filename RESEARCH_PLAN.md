@@ -90,3 +90,108 @@ Random row splits can overstate generalization when close relatives appear in
 both training and validation sets.
 
 No additional ANER throughput tuning is a prerequisite for these experiments.
+
+## Cross-domain combinations worth testing
+
+These are proposed transfers of ideas, not reductions that solve the Heesch
+problem. Physical systems with elastic strain, temperature or reversible bonds
+have different rules from rigid, gap-free polyform coronas.
+
+### Self-limiting assembly + conservation laws + inverse design
+
+Materials physics studies assemblies whose local preferences become harder to
+satisfy as their size grows. The useful transfer is to deliberately design weak
+incompatibility that permits several complete coronas but excludes unlimited
+growth. Equilibrium preference for a finite physical aggregate does not itself
+prove a hard geometric growth limit.
+
+An exact discrete starting point is an additive boundary charge. Give matching
+edge features opposite weights so their contributions cancel at an internal
+join. A tile with nonzero net charge contributes that charge every time it is
+copied; the boundary must carry the total. Mann discusses a concrete bump/nick
+counting obstruction, while Bašić's H=6 non-tiling argument uses incompatible
+densities of hexagons and triangles. Describing both as an explicit counter
+program is only an analogy, not the argument established by these papers.
+
+Research experiment: choose a marked family with a weak imbalance or a verified
+density obstruction, and use inverse SAT to seek complete early coronas. Search
+for useful conserved weights with linear constraints on legal matches. Any
+proposed obstruction must hold for every allowed rotation, reflection and fit;
+it must not assume a regular corona outline. A necessary inequality or an upper
+bound cannot prove that the desired early coronas actually exist. Use a witness
+for that side of the argument.
+
+Primary sources:
+
+- Hackney, Amey and Grason, *Dispersed, condensed and self-limiting states of
+  geometrically frustrated assembly* (2023):
+  <https://arxiv.org/abs/2303.02121>.
+- Mann and Bašić references: `refs/README.md`.
+
+### Coding theory + geometric realization
+
+Treat each intended boundary match as a short complementary code, realized by
+tabs and notches. Search for profiles that permit intended joins while excluding
+unintended label pairs, shifted fits and reflected fits. Minimize the geometric
+cost of those profiles subject to the 200-cell/span constraints.
+
+This is an analogy to synchronization/error-detecting codes, not a claim that
+Hamming distance alone controls geometric fitting. Test actual relative grid
+placements, including partial and multi-edge contacts. A correct marked rule
+system is not enough if its unmarked realization introduces escape routes.
+This is a proposed way to attack Track B's main realization bottleneck.
+
+### Program synthesis + counterexample-driven repair
+
+Use a candidate generator and a verifier in a feedback loop. A gap, collision,
+unwanted fit or actual periodic tiling can supply a concrete reason to change
+the geometric sketch. Where expressible soundly, add a constraint that excludes
+other candidates with the same failure. An UNSAT core of one fixed patch is not
+automatically a valid restriction on unrelated patches or shapes; a timeout is
+not a counterexample.
+
+This is the counterexample-guided synthesis pattern applied to the inverse
+design experiment above. It is closer to synthesizing a small constrained
+program than training a score and hoping that its largest prediction is valid.
+Begin with our Hc=4 partial fifth-corona layout before building general marked
+rule synthesis.
+
+Primary source: Solar-Lezama et al., *Combinatorial Sketching for Finite Programs*
+(2006), <https://people.eecs.berkeley.edu/~sseshia/pubdir/asplos06-final.pdf>.
+
+### Statistical mechanics: continuation diversity, not unrestricted counting
+
+The pinned checker supports `allCoronas`, but its own comment marks the method
+deprecated and highly inefficient. Enumerating every first corona is not a
+reliably cheap or one-hour task, and a large count could simply select tilers.
+
+Proposed bounded pilot: sample a small size-matched set of known Hc=1,2,3,4
+shapes and proven tilers; cap time, memory and the number of distinct first/second
+coronas. Measure how often sampled patches extend another one or two levels,
+along with diversity and solver cost. Report censored counts/timeouts explicitly;
+SAT enumeration order does not give uniform samples. Validate ranking on held-out
+parent families before running this on hundreds of archive shapes.
+
+Randomized GPU growth can be a proposal/feature source, but may miss rare valid
+extensions or strongly prefer tilers. Validate every claimed complete corona.
+Failed rollouts do not prove a finite Heesch number or an upper bound. The GPU
+is not necessarily idle: the current MLX scorer already uses it.
+
+### Higher dimensions: borrow certificates, not projected shapes
+
+A new preprint by Džuklevski, submitted 2026-10-01, compares prototile frequencies
+in perpendicular planar sections to establish finite Heesch numbers for certain
+3D prisms: <https://arxiv.org/abs/2610.02579>. Its abstract does not supply a 2D
+Hc=7 tile. The useful question is whether analogous competing frequency
+constraints can be engineered in a planar marked family. Projection or slicing
+does not automatically preserve congruent copies, non-overlap or coronas.
+
+Height functions and tiling-group invariants may provide additional certificates
+in suitable families, but they are not generic predictors of a shape's Heesch
+number. A cycle or modulo counter alone can repeat forever; an engineered clock
+needs a genuine finite-growth obstruction.
+
+The practical combined pipeline is: specify a weak but provable incompatibility,
+compile intended matches into compact geometry, synthesize coordinated edits,
+and feed exact checker counterexamples back into the sketch. None of these
+cross-domain experiments has yet demonstrated a discovery-rate improvement.
