@@ -17,6 +17,8 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `SPEC.md` | The plan: acceptance criteria, prior art, strategy tracks, architecture, milestones, risks, decision log |
 | `STATUS.md` | Living handoff log: what's done, running, next. **Read this first when resuming.** |
 | `PIPELINE_REVIEW.md` | Pipeline measurements, fixes, current allocation, and remaining strategy gaps |
+| `RESEARCH_PLAN.md` | Next research experiments: inverse patch repair, construction feasibility and targeted sweeps |
+| `refs/README.md` | Obtained construction papers, public sources and local PDF checksum |
 | `scripts/search_frontier.sh` | Next native frontier run; resume after the current run finishes |
 | `CLAUDE.md` | Short orientation for coding agents |
 | `scripts/setup_heesch_sat.sh` | Clones and builds Craig Kaplan's `heesch-sat` checker at a pinned commit |

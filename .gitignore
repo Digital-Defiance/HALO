@@ -12,3 +12,6 @@ results/*.parts.*
 
 # Kaplan's published Heesch data (download per STATUS.md; cite Kaplan 2022)
 refs/kaplan/
+
+# Local research copies; sources and checksums live in refs/README.md.
+refs/*.pdf

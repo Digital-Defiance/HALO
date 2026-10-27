@@ -1,6 +1,15 @@
 # HALO status
 
-Last updated: 2026-10-27 (Claude: overnight run analysed; two-edit sweep added). Current phase: **Best certified Hc is still 4 (21 cells). The overnight run (2.25M checks at 18–30 cells) found no new Hc=4. The one-edit sweep is the best generator by far but runs dry; the new two-edit sweep (`--sweep2-min-hc 4`, on by default) is the next run. A real jump to Hc>=5 probably needs Track B (a construction), not more local search.**
+Last updated: 2026-10-27 (Codex: construction source obtained; Hc=4 defect measured; inverse-design experiment specified). Current phase: **Best certified Hc is still 4 (21 cells). The overnight run found no new Hc=4. Test the new two-edit sweep as a bounded experiment; prioritize coordinated patch repair and construction work for a larger change in search strategy. Their discovery advantage remains untested.**
+
+## Research handoff (2026-10-27): inverse design and construction feasibility
+
+- **Done:** obtained the genuine 9-page Mann 2004 PDF at `refs/mann_2004_heesch.pdf` from the author's university page and inspected Figures 5–6. Source/checksum and the accessible Bašić 2021 full text are in `refs/README.md`. No owner-supplied Mann PDF is needed. The attempted Bašić PDF downloads were HTML and were removed; its full text and Figure 1 were inspected online.
+- **New measurement:** native `runner.run_defect` on our certified 21-cell Hc=4 shape found **5/169 uncovered, exact under the current encoding**, in 48.804 s at 4,441.3 MB peak RSS. Diagnostic caps were 120 s / 20 GB, with shared memory/system-headroom protection. Record: `results/hex21_h4_defect_20261027.jsonl` (append only). This does not change its Hc or prove a fifth corona.
+- **Next:** the proposed shortcut is **inverse patch repair**: export a partial fifth-corona patch and solve for coordinated tile-boundary changes shared by every placed copy, initially with fixed transforms. Independently check global geometry and finite Heesch classification. `RESEARCH_PLAN.md` specifies the encoding, experiment order and rejection conditions. This optimizer is not implemented and no improvement in discovery odds is claimed yet. Continue bounded two-edit sweeps alongside it.
+- **Construction qualification:** Mann's theorem concerns marked hexapillars; Bašić's figure uses six hexagons, eleven triangles and half a triangle. A small unmarked polyform realization preserving their fits has not been demonstrated. Do not treat the earlier 130–170-cell estimate as an established construction.
+- **Odds qualification:** the weeks-to-months estimate below assumes a relationship between adjacent Hc levels that has not been measured. It is a scenario, not a reliable waiting-time forecast. A 1-cell defect on an Hc=3 shape is a lead toward Hc=4, not a direct near miss for Hc=5.
+- **Running/blocked:** the bounded native diagnostic finished; no production search was started or stopped. The native process snapshot immediately before it found no `halo/search.py` process. There is no literature-access blocker to beginning Mann's construction; preserving its geometry inside the verifier limits is the research challenge.
 
 ## Current handoff (2026-10-27): overnight run a3d2f477 and the two-edit sweep
 
