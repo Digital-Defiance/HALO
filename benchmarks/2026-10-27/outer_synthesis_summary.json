@@ -1,0 +1,242 @@
+{
+  "experiment": "withheld outer corona and bounded fifth-ring pilot",
+  "date": "2026-10-27",
+  "artifacts": {
+    "results/outer_pool_control_20261027.jsonl": {
+      "bytes": 1087,
+      "sha256": "30443b4d52fd582f47145772d9ba2553450aaa1ae57724cb3da05ed0f6384418",
+      "rows": 1,
+      "statuses": {
+        "pool-only": 1
+      }
+    },
+    "results/outer_synthesis_control_20261027.jsonl": {
+      "bytes": 41464,
+      "sha256": "6012f8925243366d0a484631c407d4dee2cfb9d7e88bb02ef61dd9c3c3d288af",
+      "rows": 20,
+      "statuses": {
+        "prefix-unsat": 4,
+        "invalid-extension": 14,
+        "verified": 2
+      }
+    },
+    "results/outer_synthesis_hc5_pilot_20261027.jsonl": {
+      "bytes": 9924,
+      "sha256": "7938547672bd89ee1c2a9cfb0ebe62273384a014319dd74e23b275742f5499c3",
+      "rows": 7,
+      "statuses": {
+        "extension-unsat": 1,
+        "prefix-unsat": 6
+      }
+    }
+  },
+  "source_snapshot_sha256": {
+    "halo/outer_synthesis.py": "dfce8c13b8cc005578a866012336d0f32202e51e1b774b4a9b2b686210bba8c7",
+    "halo/patch_repair.py": "15c5c4c875cbd0a95d85349249717ea85299168d9f70c07eafb3e1da6d1fdbd6",
+    "halo/template_synthesis.py": "4df0e992579d4bf2137978e8ad306ecab59f7a3769cd21e3b3a4a40753ac7162",
+    "tests/test_outer_synthesis.py": "8183907f889149eb1513a5e60b09b1d0232bd2e1530317f8da438408923972e1"
+  },
+  "verified_controls": [
+    {
+      "edits": 4,
+      "target_level": 4,
+      "status": "verified",
+      "canon": "H 0 2 0 3 1 2 1 3 2 1 2 3 2 4 3 0 3 1 4 1 4 2",
+      "pool_capped": false,
+      "selected_poses": 1304,
+      "gold_outer_in_pool": 27,
+      "verified_lower_bound": 4,
+      "layout_attempt": 4,
+      "verification_message": "verified: hole-free Heesch number >= 4 (62 copies, grid H)"
+    },
+    {
+      "edits": 6,
+      "target_level": 4,
+      "status": "verified",
+      "canon": "H 0 2 0 3 1 2 1 3 2 1 2 3 2 4 3 0 3 1 4 1 4 2",
+      "pool_capped": false,
+      "selected_poses": 1304,
+      "gold_outer_in_pool": 27,
+      "verified_lower_bound": 4,
+      "layout_attempt": 4,
+      "verification_message": "verified: hole-free Heesch number >= 4 (62 copies, grid H)"
+    }
+  ],
+  "hc5_pilot": [
+    {
+      "parent": "H 0 2 0 3 1 2 1 3 2 1 2 3 2 4 3 0 3 1 4 1 4 2",
+      "target_cells": 11,
+      "min_cells": 11,
+      "max_cells": 11,
+      "target_level": 5,
+      "edits": 0,
+      "status": "extension-unsat",
+      "shape_attempt": 1,
+      "selected_poses": 1720,
+      "pool_capped": false,
+      "prefix_solve": {
+        "status": "sat",
+        "seconds": 0.0195,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "ac756f02c87f287928a6e461259a81546e56609ed3b9428872957563b80842ac",
+        "variables": 1987,
+        "clauses": 11094,
+        "returncode": 10
+      },
+      "extension_solve": {
+        "status": "unsat",
+        "seconds": 0.1681,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "608281b8c8904088b25ea6992639ccf94798f2acff5ce3752ea7cc2d0fe4adad",
+        "variables": 25863,
+        "clauses": 390320,
+        "returncode": 20
+      }
+    },
+    {
+      "parent": "H 0 2 0 3 1 2 1 3 2 1 2 3 2 4 3 0 3 1 4 1 4 2",
+      "target_cells": 11,
+      "min_cells": 11,
+      "max_cells": 11,
+      "target_level": 5,
+      "edits": 0,
+      "status": "prefix-unsat",
+      "shape_attempt": 2,
+      "selected_poses": null,
+      "pool_capped": null,
+      "prefix_solve": {
+        "status": "unsat",
+        "seconds": 0.0301,
+        "peak_rss_mb": 0.1,
+        "cnf_sha256": "2e773dda826672ec6a20c4cd520a470d412d4caf654a077c988738056d7b6834",
+        "variables": 1987,
+        "clauses": 11095,
+        "returncode": 20
+      },
+      "extension_solve": null
+    },
+    {
+      "parent": "H 0 2 0 3 1 2 1 3 2 1 2 3 2 4 3 0 3 1 4 1 4 2",
+      "target_cells": 11,
+      "min_cells": 11,
+      "max_cells": 11,
+      "target_level": 5,
+      "edits": 2,
+      "status": "prefix-unsat",
+      "shape_attempt": 1,
+      "selected_poses": null,
+      "pool_capped": null,
+      "prefix_solve": {
+        "status": "unsat",
+        "seconds": 0.0847,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "30f6a578eb13b31d127fda6121686c9343a7c798cd7ded746e11b65c89b27a1d",
+        "variables": 2124,
+        "clauses": 11436,
+        "returncode": 20
+      },
+      "extension_solve": null
+    },
+    {
+      "parent": "H 0 2 0 3 1 2 1 3 2 1 2 3 2 4 3 0 3 1 4 1 4 2",
+      "target_cells": 11,
+      "min_cells": 11,
+      "max_cells": 11,
+      "target_level": 5,
+      "edits": 4,
+      "status": "prefix-unsat",
+      "shape_attempt": 1,
+      "selected_poses": null,
+      "pool_capped": null,
+      "prefix_solve": {
+        "status": "unsat",
+        "seconds": 0.0805,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "c0b8722f2569753471d29c9826eedbf151e3523b0cc43d4b76f7551e3ab6a12e",
+        "variables": 2164,
+        "clauses": 11619,
+        "returncode": 20
+      },
+      "extension_solve": null
+    },
+    {
+      "parent": "H 0 2 0 3 0 4 1 2 1 3 1 4 2 1 2 2 2 3 3 1 3 2 3 3 4 1 4 2 4 3 5 0 5 1 5 2 5 3 6 1 6 2",
+      "target_cells": 21,
+      "min_cells": 19,
+      "max_cells": 25,
+      "target_level": 5,
+      "edits": 2,
+      "status": "prefix-unsat",
+      "shape_attempt": 1,
+      "selected_poses": null,
+      "pool_capped": null,
+      "prefix_solve": {
+        "status": "unsat",
+        "seconds": 0.2224,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "3eb20132b300eab4d0e47f73d1ffbb147758114796d1212c9aefd0cfff189f6e",
+        "variables": 2352,
+        "clauses": 11755,
+        "returncode": 20
+      },
+      "extension_solve": null
+    },
+    {
+      "parent": "H 0 2 0 3 0 4 1 2 1 3 1 4 2 1 2 2 2 3 3 1 3 2 3 3 4 1 4 2 4 3 5 0 5 1 5 2 5 3 6 1 6 2",
+      "target_cells": 21,
+      "min_cells": 19,
+      "max_cells": 25,
+      "target_level": 5,
+      "edits": 4,
+      "status": "prefix-unsat",
+      "shape_attempt": 1,
+      "selected_poses": null,
+      "pool_capped": null,
+      "prefix_solve": {
+        "status": "unsat",
+        "seconds": 0.1313,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "dbd9fb76299858dfa0a5f3edf55b8899e98d9d2c709770983d292b599a1c3abf",
+        "variables": 2403,
+        "clauses": 11991,
+        "returncode": 20
+      },
+      "extension_solve": null
+    },
+    {
+      "parent": "H 0 2 0 3 0 4 1 2 1 3 1 4 2 1 2 2 2 3 3 1 3 2 3 3 4 1 4 2 4 3 5 0 5 1 5 2 5 3 6 1 6 2",
+      "target_cells": 21,
+      "min_cells": 19,
+      "max_cells": 25,
+      "target_level": 5,
+      "edits": 6,
+      "status": "prefix-unsat",
+      "shape_attempt": 1,
+      "selected_poses": null,
+      "pool_capped": null,
+      "prefix_solve": {
+        "status": "unsat",
+        "seconds": 0.1986,
+        "peak_rss_mb": 0.0,
+        "cnf_sha256": "fcdfef110871e22a09df15649faa4dd7299361b6072b806330351e653898a1f0",
+        "variables": 2437,
+        "clauses": 12215,
+        "returncode": 20
+      },
+      "extension_solve": null
+    }
+  ],
+  "validation": {
+    "command": ".venv/bin/python -m unittest discover -s tests -v",
+    "tests": 56,
+    "passed": 55,
+    "skipped": 1
+  },
+  "qualifications": [
+    "Control alignment and inner three rings supplied by reference. Outer-pose generation receives neither target outer poses nor target tile cells.",
+    "Prefix-compatible tile is solved first, then fixed while its outer ring is constructed. This does not demonstrate blind joint search over all inner placements.",
+    "Fifth-ring UNSAT results exclude only the recorded fixed prefixes and cell/edit windows. Resource and iteration caps would remain unresolved.",
+    "No new Hc>=5 tile or production discovery-rate improvement. Production archives and ANER unchanged.",
+    "Development attempts are preserved; successful control rows use refinement=fixed-tile-hole-cuts-v1. Source hashes describe the final published snapshot, not every earlier development revision."
+  ]
+}

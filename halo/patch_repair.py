@@ -160,7 +160,7 @@ class CNF:
 class RepairModel:
     def __init__(self, record, edits, radius=1, min_cells=1, max_cells=200,
                  freeze_interior=True, require_change=True, outer_shifts=0,
-                 shift_from_level=None):
+                 shift_from_level=None, optional_from_level=None):
         grid, cells, placements, target = unpack_patch(record)
         if edits < 0 or radius not in (0, 1, 2) or outer_shifts not in (0, 1):
             raise ValueError("invalid edit budget, cell radius or outer shifts")
@@ -169,6 +169,8 @@ class RepairModel:
         shift_from_level = target if shift_from_level is None else shift_from_level
         if not 1 <= shift_from_level <= target:
             raise ValueError("moving levels must exclude the central copy")
+        if optional_from_level is not None and not 1 <= optional_from_level <= target:
+            raise ValueError("optional levels must exclude the central copy")
         self.grid, self.original, self.target = grid, set(cells), target
         self.cnf = cnf = CNF()
         possible = set(cells)
@@ -190,14 +192,16 @@ class RepairModel:
         self.placements = []  # (seven-entry placement, selector or 0 for mandatory)
         outer = set()
         for p in placements:
-            if p[0] < shift_from_level or not outer_shifts:
-                self.placements.append((p, 0))
-            else:
+            if outer_shifts and p[0] >= shift_from_level:
                 for dx, dy in [(0, 0)] + shp.NEIGHBOURS[grid]:
                     q = list(p)
                     q[3] += dx
                     q[6] += dy
                     outer.add(tuple(q))
+            elif optional_from_level is not None and p[0] >= optional_from_level:
+                outer.add(tuple(p))
+            else:
+                self.placements.append((p, 0))
         for p in sorted(outer):
             self.placements.append((p, cnf.variable()))
         self.decisions = list(self.variables.values()) + [s for _, s in self.placements if s]

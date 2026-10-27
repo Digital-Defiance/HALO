@@ -147,3 +147,86 @@ used as a generator for Hc=4→5. A useful version must let the layout change
 with the tile (for example, search over placements as well as cells, as
 heesch-sat does); until then, the layout-free two-edit sweep is the better
 tool.
+
+## Withholding the target outer ring (2026-10-27, native Codex)
+
+`halo/outer_synthesis.py` tests a larger placement space without supplying the
+answer's outer-ring poses. The reference alignment and inner prefix are retained.
+The default strategy enumerates prefix-compatible tile occupancies, generates
+outer poses from each resulting tile, and solves for a complete next corona.
+An unsuccessful extension leads to the next prefix-compatible tile within the
+iteration limits. A capped extension remains unresolved even if the remaining
+prefix occupancies are later exhausted.
+
+Pose generation enumerates grid symmetries and translations that could contact
+the previous ring. Original-cell collisions are filtered using necessary shared
+deletions. A ranked cap is explicitly reported as incomplete. For a fixed tile,
+no cell window expansion is needed; the tested 1,304/1,720-pose pools below are
+uncapped. `RepairModel.optional_from_level` accepts these independent poses
+without artificially shifting them around supplied target locations.
+
+Local coverage can still produce an outer hole. For a fixed tile, a sound lazy
+cut requires either removal of at least one current copy along that hole's wall,
+or coverage of a chosen empty cell inside it. Keeping the entire wall and the
+empty cell preserves a bounded empty component. Every accepted result must
+still pass `halo/verify.py`, including all earlier prefixes and tile constraints.
+
+Control source (known Hc=3, 11 cells):
+
+```text
+H 0 1 0 2 1 1 1 2 1 3 2 1 2 3 3 0 3 2 4 0 4 2
+```
+
+Example reproduction:
+
+```sh
+.venv/bin/python halo/outer_synthesis.py \
+  --parent 'H 0 1 0 2 1 1 1 2 1 3 2 1 2 3 3 0 3 2 4 0 4 2' \
+  --template shapes/reference/hex11_h4.witness.txt \
+  --edit-budgets 2,4,6 --seconds 15 --mem-mb 1000 \
+  --out results/outer_synthesis_control_20261027.jsonl
+```
+
+The two known single-cell moves are four occupancy flips (remove/add twice).
+Two flips are UNSAT for the supplied prefix. At four and six flips the first
+prefix-compatible tile is the known Hc=4 reference. The independently generated
+1,304-pose pool contains all 27 held-out outer placements. Three rejected holed
+layouts supply 14 hole cuts, then the fourth solve produces a verified four-ring
+patch with 62 copies. Extension solver time totals 0.70/0.80 s for the 4/6-flip
+trials, plus approximately 0.22 s construction each. These short control timings
+do not predict production discovery cost or stable peak memory.
+
+This removes the outer-placement oracle used in `template_synthesis.py`, but
+**does not remove the reference alignment or inner three rings**. It establishes
+a working conditional design step, not a new tile, a finite-Heesch proof, or an
+unbiased discovery benchmark. The recovered tile already has an ordinary
+non-tiling classification; new tiles would need separate `-isohedral` checking.
+
+### Bounded fifth-ring pilot
+
+`--extend-one` uses every supplied witness ring as a prefix and attempts one
+new corona, with no reference outer-ring arrangement available.
+
+| Source / allowed tile cells | Changed-cell bounds | Result with given inner four rings fixed |
+| --- | --- | --- |
+| Known 11-cell Hc=4 / exactly 11 | 0 | No fifth-ring extension even allowing outer holes; complete 1,720-pose pool, UNSAT |
+| Same / exactly 11 | 2, 4 (require a change) | Prefix occupancy UNSAT |
+| 21-cell Hc=4 / 19–25 | 2, 4, 6 (require a change) | Prefix occupancy UNSAT |
+
+These fast, decisive exclusions identify the supplied inner arrangements as a
+bottleneck in these trials. They do not rule out other prefixes or constructions.
+Next: earlier-ring placement freedom and cross-family template transfer, coupled
+with compact matching constraints. Do not rerun these unchanged models with
+larger time caps. The production sweep, other AI's scoring and ANER are untouched.
+
+Evidence is append-only:
+
+- `results/outer_pool_control_20261027.jsonl`: initial joint-window pool; 7,583
+  collision-feasible poses capped to 512, containing only 10/27 reference poses.
+- `results/outer_synthesis_control_20261027.jsonl`: early full-assignment-block
+  trials retained, followed by the successful `fixed-tile-hole-cuts-v1` trials.
+- `results/outer_synthesis_hc5_pilot_20261027.jsonl`: seven rows for the bounded
+  fifth-ring trials, including exhaustion after the unchanged 11-cell attempt.
+- `benchmarks/2026-10-27/outer_synthesis_summary.json`: hashes, selected outcomes
+  and scope qualifications. Five additional regression cases pass; the full
+  suite has 55 passes and one existing opt-in slow test skipped.

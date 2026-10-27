@@ -51,7 +51,7 @@ those empirical tracks, pursue controlled experiments on these levers:
 
 | Lever | Next test or gate |
 | --- | --- |
-| Joint tile/placement synthesis and template transfer | Recover known Hc=3→4 improvements, then withhold target outer-ring placements and generate a placement pool independently. Generalization must be demonstrated before an Hc=5 search. |
+| Joint tile/placement synthesis and template transfer | Withheld-outer-ring Hc=3→4 control now passes. The bounded Hc=5 pilot fails with fixed inner rings. Next: template transfer with independently chosen alignment and earlier-ring placement choices; demonstrate control recovery before a larger search. |
 | Compact matching codes on achiral substrates | Design complementary boundary profiles and test all intended/reflected fits inside the cell/span limits. The failed chiral hexapillar copies are not a useful unchanged baseline. |
 | Conservation laws and density/tiling-group obstructions | Search for sound conserved quantities that prove eventual failure, paired with actual early-corona witnesses. An obstruction alone does not produce a high Heesch tile. |
 | Multiscale and motif changes; 40–60-cell cost probes | Prepare larger coordinated changes and measure costs when native resources are free. Keep bounded SAT checks and family-diverse controls. |
@@ -70,6 +70,38 @@ general search. It establishes that the synthesis encoding can perform a real
 known improvement in a suitable layout. The next test must supply less of the
 answer, especially the outer placements; the shelved parent-patch trials remain
 negative. Do not conflate the two experiments.
+
+**Stronger control completed:** `halo/outer_synthesis.py` supplies only the inner
+three rings to the synthesis routine. It first finds a compatible tile, then
+generates all potential fourth-ring contacts from that tile and prefix. Its
+1,304-pose pool contains all 27 held-out reference poses without being given
+them. Fixed-tile hole cuts plus independent verification recover the known
+Hc=4 tile at 4/6 flips; 2 flips remain UNSAT. Alignment and the inner prefix
+still come from the reference, so this is conditional synthesis, not a blind
+generator. The bounded fifth-ring trial excludes only the tested fixed prefixes
+and edit/size windows. See `REPAIR_PILOT.md` and
+`results/outer_synthesis_hc5_pilot_20261027.jsonl`.
+
+**What to work on next across the portfolio:**
+
+- Synthesis: remove more supplied structure. Test earlier-ring pose choices and
+  transfer a small library of prefixes between unrelated shape families. Require
+  controls to survive independently selected alignment; do not merely enlarge
+  the edit budget around prefixes that admit no changed tile.
+- Construction/coding: use a small achiral substrate and optimize actual
+  complementary tab/notch fits, including reflection and shifted contacts,
+  before committing to another marked-chain realization. Fit/span constraints
+  must enter synthesis from the start.
+- Conservation: pair a sound boundary-charge or density obstruction with the
+  synthesis loop's early-corona witnesses. Neither half alone is the target.
+- Growth/statistical features: cap continuation sampling and test ranking on
+  held-out families, including proven tilers, before assigning GPU time.
+- Multiscale/other grids: prepare coordinated motif changes and 40–60-cell cost
+  probes for spare resources. Triangular-grid claims first need independent
+  geometry verification support.
+
+These remain open research levers. The current sweep and other AI's remeasure
+continue as controls; no discovery-rate gain or Hc>=5 is claimed.
 
 ## Handoff (2026-10-27, 11:50 PT): where things stand and what to do next
 

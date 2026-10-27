@@ -29,6 +29,7 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `halo/patch_repair.py` | Experimental SAT inverse design with independently checked patches |
 | `halo/gen_report.py` | Generator and per-parent sweep yield from read-only log snapshots |
 | `halo/template_synthesis.py` | Experimental transfer of a supplied corona template to a nearby tile |
+| `halo/outer_synthesis.py` | Experimental tile synthesis and independent construction of a withheld outer ring |
 | `build/<OS>/` | Generated; the cloned checker lives here (separate per OS, so Linux and macOS builds never mix) |
 
 ## Quick start
