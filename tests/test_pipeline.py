@@ -311,6 +311,37 @@ class SearchTests(unittest.TestCase):
             search.main()
         return [json.loads(ln) for ln in log.read_text().splitlines()]
 
+    def test_two_edit_sweep_covers_the_ball_once(self):
+        """The two-edit sweep checks every valid shape within two one-cell edits of an hc>=4
+        parent exactly once, then hands checks back to the other generators."""
+        seed_line = shape.canonical("O", [(0, 0), (1, 0), (2, 0), (2, 1), (1, 2)])
+        g, cells = shape.parse(seed_line)
+        nb = shape.NEIGHBOURS[g]
+
+        def edits(s):
+            out = [s | {f} for f in {(x + dx, y + dy) for x, y in s for dx, dy in nb} - s]
+            for c in s:
+                rest = s - {c}
+                out.append(rest)
+                out += [rest | {f} for f in {(x + dx, y + dy) for x, y in rest for dx, dy in nb} - rest - {c}]
+            return out
+
+        ball = set()
+        for e1 in edits(set(cells)):
+            for e2 in edits(e1):
+                if 4 <= len(e2) <= 7 and shape.check(shape.fmt(g, sorted(e2)))[0]:
+                    ball.add(shape.canonical(g, sorted(e2)))
+        ball.discard(seed_line)
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "seeds.jsonl").write_text(json.dumps(
+                {"shape": seed_line, "status": "nontiler", "hc": 4, "hh": 4, "cells": 5}) + "\n")
+            rows = self.run_search(d, n=len(ball) + 5, extra=[
+                "--sweep2-min-hc", "4", "--sweep-frac", "1", "--max-cells", "7", "--parent-min-cells", "4"])
+        swept = [r["canon"] for r in rows if r["generator"] == "search-sweep2"]
+        self.assertEqual(len(swept), len(set(swept)))
+        self.assertEqual(set(swept), ball)
+        self.assertEqual(sum(r["generator"] != "search-sweep2" for r in rows), 5)
+
     def test_exact_evaluation_limit_and_resume(self):
         with tempfile.TemporaryDirectory() as d:
             rows = self.run_search(d)

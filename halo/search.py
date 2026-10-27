@@ -162,6 +162,13 @@ def main():
                          "least this hc, best parents first; new finds at that level are swept too. 0 = off")
     ap.add_argument("--sweep-frac", type=float, default=0.5,
                     help="fraction of checks given to the sweep while it has work")
+    ap.add_argument("--sweep2-min-hc", type=int, default=4,
+                    help="two-edit sweep: when the one-edit sweep has no work, check every shape two one-cell "
+                         "edits away from parents with at least this hc, best parents first (generator "
+                         "search-sweep2; ~100k shapes per 20-cell parent). 0 = off")
+    ap.add_argument("--sweep2-max-defect", type=float, default=0.015,
+                    help="also give the two-edit sweep to parents one level lower (hc = sweep2-min-hc - 1) whose "
+                         "measured next-corona defect fraction is at most this (near misses)")
     ap.add_argument("--defect-min-hc", type=int, default=3,
                     help="for non-tilers with at least this hc, also measure how close they come to the next "
                          "corona: the fewest uncovered cells next to an hc-patch (third_party/heesch-sat/"
@@ -326,10 +333,19 @@ def main():
     sweep_heap = []  # (-fitness, tiebreak, canon) of parents whose neighbourhood is still to be swept
     swept = set()
 
+    sweep2_heap = []  # same, for the two-edit sweep
+    swept2 = set()
+
     def want_sweep(row):
         if args.sweep_min_hc and (row.get("hc") or 0) >= args.sweep_min_hc and row["canon"] not in swept:
             swept.add(row["canon"])
             heapq.heappush(sweep_heap, (tuple(-x for x in fitness(row)), len(swept), row["canon"]))
+        hc = row.get("hc") or 0
+        if (args.sweep2_min_hc and row["canon"] not in swept2
+                and (hc >= args.sweep2_min_hc
+                     or (hc == args.sweep2_min_hc - 1 and defect_frac(row) <= args.sweep2_max_defect))):
+            swept2.add(row["canon"])
+            heapq.heappush(sweep2_heap, (tuple(-x for x in fitness(row)), len(swept2), row["canon"]))
 
     def note_result(row):
         if row.get("status") != "nontiler":
@@ -549,6 +565,63 @@ def main():
                 return k, parent, op, None
         return None
 
+    def raw_edits(s, nb):
+        """All one-cell edits of a cell set, unvalidated (an intermediate step of a two-edit move
+        may be disconnected or too small; only the final shape is checked)."""
+        frontier = {(x + dx, y + dy) for x, y in s for dx, dy in nb} - s
+        for f in frontier:
+            yield s | {f}
+        for c in s:
+            rest = s - {c}
+            if rest:
+                yield rest
+                for f in {(x + dx, y + dy) for x, y in rest for dx, dy in nb} - rest - {c}:
+                    yield rest | {f}
+
+    sweep2_q = collections.deque()
+    sweep2_state = {"parent": None, "grid": None, "firsts": [], "i": 0, "seen": set()}
+
+    def next_sweep2():
+        """Next unchecked shape two one-cell edits from the best waiting parent. The ball is
+        expanded a few first-step shapes at a time, so a parent's ~100k shapes never sit in memory."""
+        st = sweep2_state
+        while True:
+            while sweep2_q:
+                k, parent, op = sweep2_q.popleft()
+                if k in archive:
+                    continue
+                with lock:
+                    archive[k] = {"canon": k, "status": "pending"}
+                return k, parent, op, None
+            if st["parent"] is None:
+                if not sweep2_heap:
+                    return None
+                _, _, parent = heapq.heappop(sweep2_heap)
+                g, cells = shp.parse(parent)
+                st.update(parent=parent, grid=g, firsts=[frozenset(f) for f in raw_edits(set(cells), shp.NEIGHBOURS[g])],
+                          i=0, seen={shp.canonical(g, cells)})
+                sweep_stats["parents2"] = sweep_stats.get("parents2", 0) + 1
+            g = st["grid"]
+            nb = shp.NEIGHBOURS[g]
+            for _ in range(4):
+                if st["i"] >= len(st["firsts"]):
+                    st["parent"] = None
+                    break
+                first = st["firsts"][st["i"]]
+                st["i"] += 1
+                for new in raw_edits(set(first), nb):
+                    if not (args.min_cells <= len(new) <= args.max_cells):
+                        continue
+                    cells = sorted(new)
+                    ok, problems, _ = shp.check_cells(g, cells)
+                    if not ok or any("stricter" in q for q in problems):
+                        continue
+                    k = shp.canonical(g, cells)
+                    if k in st["seen"] or k in archive:
+                        continue
+                    st["seen"].add(k)
+                    sweep2_q.append((k, st["parent"], "sweep2:edit2"))
+
     relaxers, rqueue = [], []
     if args.relax_frac > 0:
         if sc is None:
@@ -587,8 +660,10 @@ def main():
         collect_refill()
         if len(queue) <= max(1, args.pick // 2):
             start_refill()
-        if args.sweep_min_hc and rng.random() < args.sweep_frac:
-            job = next_sweep()
+        if (args.sweep_min_hc or args.sweep2_min_hc) and rng.random() < args.sweep_frac:
+            job = next_sweep() if args.sweep_min_hc else None
+            if job is None and args.sweep2_min_hc:
+                job = next_sweep2()
             if job is not None:
                 return job
         if relaxers and rng.random() < args.relax_frac:
@@ -657,6 +732,8 @@ def main():
             return "search-" + op.split(":")[0]
         if op.startswith("sweep:"):
             return "search-sweep"
+        if op.startswith("sweep2:"):
+            return "search-sweep2"
         return "search-scored" if pred is not None else "search"
 
     def check(canon, opts):
@@ -808,6 +885,11 @@ def main():
                         sw_eta = f", rough backlog time ~{fmt_dur(todo / sw_rate)}" if sw_rate > 0 else ""
                         print(f"     sweep: {len(sweep_heap)} parents waiting + {len(sweep_q)} edits queued, "
                               f"~{todo:,.0f} checks in this backlog{sw_eta} (new hc>=3 finds can add work)", flush=True)
+                    if args.sweep2_min_hc and (sweep2_q or sweep2_heap or sweep2_state["parent"]):
+                        st2 = sweep2_state
+                        frac = st2["i"] / max(1, len(st2["firsts"])) if st2["parent"] else 0.0
+                        print(f"     two-edit sweep: current parent {100 * frac:.0f}% expanded, "
+                              f"{len(sweep2_heap)} parents waiting, {len(sweep2_q)} shapes queued", flush=True)
                     if sc is not None:
                         print(f"     scored batches: {generation_seconds:.1f}s generation/inference, "
                               f"{len(queue)} queued, refill {'running' if scored_future is not None else 'idle'}", flush=True)

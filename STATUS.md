@@ -1,8 +1,31 @@
 # HALO status
 
-Last updated: 2026-10-26 (guard policy correction). Current phase: **The restarted search is active; its inherited guard disabled the scorer on a 0-versus-1 rare-hit window. The new default warns and keeps scoring enabled. The running process needs a restart to adopt this policy. Best certified Hc remains 4 (21 cells).**
+Last updated: 2026-10-27 (Claude: overnight run analysed; two-edit sweep added). Current phase: **Best certified Hc is still 4 (21 cells). The overnight run (2.25M checks at 18–30 cells) found no new Hc=4. The one-edit sweep is the best generator by far but runs dry; the new two-edit sweep (`--sweep2-min-hc 4`, on by default) is the next run. A real jump to Hc>=5 probably needs Track B (a construction), not more local search.**
 
-## Current handoff: pipeline review
+## Current handoff (2026-10-27): overnight run a3d2f477 and the two-edit sweep
+
+- **Run a3d2f477** (15:48–23:48 on 2026-10-26, `scripts/search_frontier.sh` settings: 14 jobs, sweep 0.75, v4 MLX FP32 scoring, warn-only guard). 2,252,178 checks:
+
+  | Generator | Checks | Hc>=2 | Rate |
+  | --- | --- | --- | --- |
+  | one-edit sweep | 86,237 | 720 | 0.83% |
+  | scorer v4 picks | 673,527 | 1,094 | 0.16% |
+  | random mutants | 1,492,414 | 512 | 0.034% |
+
+  The sweep also produced 275 of the run's 296 Hc=3 finds, over 100× the per-check rate of the other generators. It ran dry around 19:00: hourly sweep checks were 6.4k, 1k, 25.7k, 53.7k, then under 1.6k per hour. Hc=3 finds cluster, so their one-edit neighbourhoods overlap and were exhausted. The 48 guard warnings on the scored arm were 0–2 hits per 2,000; that's noise, and over the run the scorer beat random about 5×.
+- **Totals for runs 3–3c (18+ cells):** 713 Hc=3 shapes (sizes 18: 523, 19: 14, 20: 57, 21: 103, 22: 5, 23: 11) and one Hc=4 (the 21-cell shape). No Hc=5.
+- **Closeness to the next level** (defect = uncovered cells next to the hc-patch, out of the ring) for 558 Hc>=3 finds. The best near misses, as Hc=3 shapes close to Hc=4:
+  - 22 cells, 1/163 uncovered: `H 0 0 0 1 0 2 0 3 1 0 1 1 1 2 1 3 1 4 1 5 2 0 2 1 2 2 2 3 2 4 2 5 2 6 3 1 3 2 3 3 3 4 4 2`
+  - 21 cells, 2/218: `H 0 0 0 1 0 2 0 3 1 0 1 1 1 2 1 3 2 2 3 1 3 2 3 3 3 4 4 1 4 2 4 3 4 4 5 1 5 2 6 0 6 1`
+  - 18 cells, 2/193; 19 cells, 2/148; 18 cells, 3/197.
+
+  The 21-cell Hc=4 shape's own defect has not been measured. It needs more memory than the agent sandboxes; run `runner.run_defect(...)` on the Mac.
+- **New: two-edit sweep** (`search.py --sweep2-min-hc 4 --sweep2-max-defect 0.015`, default on). When the one-edit sweep has no work, it checks every valid shape two one-cell edits from each Hc>=4 parent, and from each Hc=3 parent with a defect fraction of at most 1.5%, best parents first. Intermediate steps are not validated; only the final shape is. The ball is expanded a few first steps at a time, and shapes are logged as `search-sweep2`. The 21-cell Hc=4 shape has 41,123 new shapes two edits away (22-cell near miss: 49,348); enumeration takes ~30 s on 2 cloud cores. At the overnight pace that's ~12 min per parent. New regression test `test_two_edit_sweep_covers_the_ball_once`; all 22 tests pass.
+- **Odds, honestly:** at 18+ cells, Hc=4 turned up once per ~700 Hc=3 shapes. If Hc=5 is as rare relative to Hc=4, finding one by local search would take ~10^8–10^9 checks (weeks to months of the Mac). The two-edit sweep is the cheapest remaining way to search the most promising region. **Track B** (realise Mann's or Bašić's marked Heesch-5/6 tiles as a large polyhex, ~130–170 cells: a side-7 hexagon with 1–2-cell tabs and notches, within the 200-cell and span-29 limits) is the plausible route to Hc>=5. It needs the figures from Mann 2004 (*Amer. Math. Monthly* 111(6)) and Bašić 2021 in `refs/`.
+- **Context:** the public Layr-Labs/heesch challenge (same target and limits) had no Hc=5 as of 2026-10-20; its best score is 4.988 (15-hex, 3/254 uncovered; their ring counts differ from ours).
+
+## Pipeline review (2026-10-26, previous handoff)
+
 
 - **Running:** the owner replaced PID 16806 with PID 85497, run `7fe60404b7fb478eb50b9412f8b12dd0`, started 15:13 PDT. Its manifest still identifies the old code/guard and two 10 GB retries. The previous run's scorer shutoff around 15:11 was the 0/2,000 versus 1/2,000 event described below. Active processes and result bytes were left untouched while preparing the changes.
 - **Guard correction:** the new default is warn-only, with warnings rate-limited by completed guided checks and recorded in the run manifest. All 16 tests pass, including integration checks that default warnings retain scoring, explicit `disable` stops it, and `off` keeps scoring without monitoring. No live search data was edited for this change.
