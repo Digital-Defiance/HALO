@@ -121,8 +121,8 @@ The pilot never showed the tool can succeed on a case with a known answer, so
 its UNSAT results were uninterpretable. Control inputs come from Kaplan's
 enumerated polyhexes (`results/seeds_kaplan_hex_3up.jsonl`, 11–17 cells):
 
-- **No Hc=3 polyhex is one edit (add, remove or move one cell) from an Hc=4
-  polyhex.** The same holds for our 21-cell Hc=4 tile: its 38 valid add/remove
+- **Among the tested Kaplan Hc=3/Hc=4 sets, no Hc=3 polyhex was one edit
+  (add, remove or move one cell) from an Hc=4 polyhex.** For our 21-cell Hc=4 tile, its 38 valid add/remove
   neighbours classify as 14 isohedral, Hc=0 ×3, Hc=1 ×19 and Hc=2 ×2. Hc=4
   shapes are isolated peaks.
 - 22 Hc=3 shapes are two edits from an Hc=4 shape
@@ -136,7 +136,9 @@ proposals** (`results/repair_control_kaplan_{fixed,wide}_20261027.jsonl`).
 The three closest archive near misses (22 cells 1/163, 21 cells 2/218,
 19 cells 2/148) were also UNSAT in both regimes. Encoding sanity check: on the
 layout whose ring is already covered (0/133), the same model with 0 edits and
-`require_change=False` is SAT, so the UNSATs are not an encoding failure.
+`require_change=False` is SAT. This checks the unchanged covered fixture; it does
+not by itself establish that every part of the encoding is correct. Separate
+synthetic tests also demonstrate successful cell and placement repairs.
 
 **Conclusion:** a known two-edit improvement is not reachable by repairing the
 parent's own partial patch, even with outer shifts. The improved shape's

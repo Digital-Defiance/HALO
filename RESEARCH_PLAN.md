@@ -19,20 +19,57 @@ Full detail is in `STATUS.md`.
 **State.** Best certified result is still the 21-cell Hc=4 polyhex (v2 defect
 7/171). No Hc>=5. New negative result: fixed-layout inverse repair fails a positive
 control (120/120 UNSAT on Hc=3 shapes known to be two edits from Hc=4;
-`REPAIR_PILOT.md`). Hc=4 polyhexes have no Hc=3 one-edit neighbours, so one-edit
-hill climbing cannot reach them; two-edit moves can.
+`REPAIR_PILOT.md`). No Hc=3 one-edit neighbours were found in the tested Kaplan
+sets or the 21-cell example; this is a statement about those tested shapes,
+not a theorem about all Hc=4 polyhexes. Two-edit improvements exist in the controls.
 
 **Next, in order:**
 1. **Seeded two-edit sweep** (owner, native):
    `./scripts/search_frontier.sh --sweep2-max-defect 0.03 --seeds results/seeds_kaplan_hex_3up.jsonl,results/defect_v2_remeasure_20261027.jsonl`.
-   Seed files now supply v2 defects (commit 8e92602). Restart when the remeasure file grows.
-2. **Finish the v2 remeasure** (`results/defect_v2_remeasure_20261027.jsonl`; resumable).
+   Seed files now supply v2 defects (commit 8e92602). The native run
+   `920d77d84a3f4190819d2649373f53cb` was verified to use these options. Leave it running.
+2. **Finish the existing v2 remeasure** (`results/defect_v2_remeasure_20261027.jsonl`;
+   resumable). Let the other AI's worker finish; do not launch a duplicate.
+   Verify/copy the final file, then do one planned restart to load the complete
+   seed set. A running search reads its seed files at startup, not continuously.
 3. **Review sweep2 yield** per parent (Hc>=3/Hc>=4 finds per 1,000 checks) before
-   another long run; drop parents whose balls are exhausted without hits.
-4. **Cost scaling at 40–60 cells** on the Mac's 64 GB: Hc>=7 probably needs 100+
-   cells, and nothing above 30 cells has been measured.
+   another long run. Read-only report:
+   `.venv/bin/python halo/gen_report.py results/search_hex_01.jsonl --latest-run --generator search-sweep2 --by-parent`.
+   It counts completed records and unique hits per parent; it does not infer
+   neighbourhood exhaustion. Deep checks can finish later, so in-progress yield
+   is completion-biased. Assess settled outcomes before changing allocation.
+4. **Prepare cost scaling at 40–60 cells** for when the Mac has spare resources.
+   No lower bound here establishes that Hc>=7 requires 100+ cells; measure the
+   cost of widening the search without assuming a required shape size.
 5. **Shelved:** fixed-layout inverse repair (needs placement search to be useful);
    direct Mann/Bašić realizations (`CONSTRUCTION_PILOT.md`).
+
+## Unconventional research portfolio (Codex, ongoing)
+
+Keep the active sweep and the other AI's v2 remeasure running. In addition to
+those empirical tracks, pursue controlled experiments on these levers:
+
+| Lever | Next test or gate |
+| --- | --- |
+| Joint tile/placement synthesis and template transfer | Recover known Hc=3→4 improvements, then withhold target outer-ring placements and generate a placement pool independently. Generalization must be demonstrated before an Hc=5 search. |
+| Compact matching codes on achiral substrates | Design complementary boundary profiles and test all intended/reflected fits inside the cell/span limits. The failed chiral hexapillar copies are not a useful unchanged baseline. |
+| Conservation laws and density/tiling-group obstructions | Search for sound conserved quantities that prove eventual failure, paired with actual early-corona witnesses. An obstruction alone does not produce a high Heesch tile. |
+| Multiscale and motif changes; 40–60-cell cost probes | Prepare larger coordinated changes and measure costs when native resources are free. Keep bounded SAT checks and family-diverse controls. |
+| Other grids and continuation features | Test triangular-grid templates and capped extension/diversity features. Extend independent geometry verification before accepting new grid results; avoid exhaustive corona counts as a default. |
+
+**New conditional positive control:** `halo/template_synthesis.py` aligns a known
+Hc=3 11-hex with the certified Hc=4 reference's coordinate frame. With the target
+layout supplied, 2 cell flips are UNSAT while 4 and 6 recover the known Hc=4
+tile, independently verifying four complete coronas. This also succeeds with
+local choices of third/fourth-ring placements. Results:
+`results/repair_template_control_20261027.jsonl` and
+`results/template_synthesis_control_20261027.jsonl`.
+
+This is an oracle-template control, not a discovery or a demonstration of
+general search. It establishes that the synthesis encoding can perform a real
+known improvement in a suitable layout. The next test must supply less of the
+answer, especially the outer placements; the shelved parent-patch trials remain
+negative. Do not conflate the two experiments.
 
 ## Handoff (2026-10-27, 11:50 PT): where things stand and what to do next
 
