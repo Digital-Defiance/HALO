@@ -27,14 +27,4 @@ echo "Built $PD"
 # HALO's next-corona defect solver: heesch-sat with a relaxed outer corona
 # (third_party/heesch-sat/halo_defect.patch + defect.cpp), built in a separate copy so the
 # sat binary above is never touched.
-DD="$(dirname "$DEST")/heesch-sat-defect"
-STAMP="$ROOT/third_party/heesch-sat/halo_defect.patch"
-if [ ! -x "$DD/defect" ] || [ "$STAMP" -nt "$DD/defect" ] || [ "$ROOT/third_party/heesch-sat/defect.cpp" -nt "$DD/defect" ]; then
-  rm -rf "$DD" && mkdir -p "$DD"
-  cp "$DEST"/src/*.h "$DEST"/src/*.cpp "$DD"/
-  patch -s -d "$DD" -p2 < "$STAMP"
-  cp "$ROOT/third_party/heesch-sat/defect.cpp" "$DD/"
-  cp "$ROOT/third_party/heesch-sat/$MK" "$DD/Makefile.halo"
-  make -C "$DD" -f Makefile.halo -j"$JOBS" defect
-fi
-echo "Built $DD/defect"
+bash "$ROOT/scripts/setup_patch_repair.sh"

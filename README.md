@@ -26,6 +26,7 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `shapes/reference/` | Certified reference shapes (heesch-sat text format) |
 | `results/` | Search outputs (JSONL); never delete |
 | `halo/` | Our code: harness, generators, scorer (in progress) |
+| `halo/patch_repair.py` | Experimental SAT inverse design with independently checked patches |
 | `build/<OS>/` | Generated; the cloned checker lives here (separate per OS, so Linux and macOS builds never mix) |
 
 ## Quick start
@@ -101,6 +102,54 @@ that path for another long run.
 
 Model weights and the large `results/search_hex_01.jsonl` archive use Git LFS.
 Clones need Git LFS and `git lfs pull` to materialize them before searching.
+
+## Inverse repair pilot and defect correction
+
+The patch exporter and inverse-repair prototype are implemented. The first pilot
+tested two independently checked Hc=4 layouts with 2/4/6 changed cells, a two-cell
+candidate band, and fixed, movable fifth-ring, or movable fourth/fifth-ring
+placements. All 18 bounded models were UNSAT; no Hc=5 was found. These results
+exclude only the tested local layout/edit spaces. See `REPAIR_PILOT.md`.
+
+Independent inspection found that the old defect scorer allowed large holes in
+inner coronas. The earlier 5/169 result for our 21-cell tile was one such layout.
+Version 2 checks every inner prefix; its corrected result is **7/171**, with a
+valid Hc=4 prefix. The certified Hc=4 tile and its original witness are unchanged.
+Search preserves legacy defect fields but excludes them from near-miss ranking;
+`halo/add_defects.py` can remeasure selected legacy parents into an append-only
+output. Ordinary Hc classifications and scorer training labels are unaffected.
+
+`scripts/search_frontier.sh` builds the versioned defect binary when needed.
+The isolated builder can also be run directly:
+
+```sh
+bash scripts/setup_patch_repair.sh
+```
+
+It publishes the new binary atomically under `build/<OS>/heesch-sat-defect-v2/`
+and leaves running checkers intact. Export selected classified parents with:
+
+```sh
+.venv/bin/python halo/add_defects.py results/seeds_kaplan_hex_3up.jsonl \
+  --out results/selected_h4_patches.jsonl --min-hc 4 --min-cells 15 \
+  --jobs 1 --include-patch --mem-mb 20000 --timeout 120
+```
+
+To reproduce the widest tested pilot:
+
+```sh
+.venv/bin/python halo/patch_repair.py results/repair_layouts_checked_20261027.jsonl \
+  --out /tmp/halo_repair_replay.jsonl --radius 2 --outer-shifts 1 \
+  --shift-from-level 4 --free-interior --seconds 600 --solve-seconds 60
+```
+
+The pilot is sequential, with a 20 GB per-solver cap and an 8 GB system-available
+reserve. Timeouts remain unknown. Geometric proposals must pass the independent
+verifier and the ordinary non-tiling classifier before becoming discoveries.
+
+Run regression tests with `.venv/bin/python -m unittest discover -s tests -v`.
+Set `HALO_SLOW_TESTS=1` to include the real Hc=4 defect regression (about 45 s and
+4.5 GB on the M4 Max).
 
 ## Licenses
 

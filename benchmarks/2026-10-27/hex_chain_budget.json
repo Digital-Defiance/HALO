@@ -1,0 +1,42 @@
+{
+  "source_sha256": "3d06f03d739414aa85b08ebc01c54718680e2d0fb9b274b75641b098eb0c668b",
+  "grid": "I",
+  "cell_limit": 200,
+  "span_limit": 29,
+  "rows": [
+    {
+      "hexagons": 4,
+      "triangle_side": 1,
+      "cells": 24,
+      "best_span_sum_minmax": 26,
+      "best_span_sum_extent": 28,
+      "body_within_cell_limit": true,
+      "body_within_span_limit": true,
+      "body_within_strict_span_limit": true,
+      "markings_included": false
+    },
+    {
+      "hexagons": 4,
+      "triangle_side": 2,
+      "cells": 96,
+      "best_span_sum_minmax": 56,
+      "best_span_sum_extent": 58,
+      "body_within_cell_limit": true,
+      "body_within_span_limit": false,
+      "body_within_strict_span_limit": false,
+      "markings_included": false
+    },
+    {
+      "hexagons": 4,
+      "triangle_side": 3,
+      "cells": 216,
+      "best_span_sum_minmax": 86,
+      "best_span_sum_extent": 88,
+      "body_within_cell_limit": false,
+      "body_within_span_limit": false,
+      "body_within_strict_span_limit": false,
+      "markings_included": false
+    }
+  ],
+  "qualification": "Unmarked bodies only; does not rule out compressed or alternate-grid constructions."
+}

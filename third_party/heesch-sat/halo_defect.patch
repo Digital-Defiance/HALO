@@ -68,7 +68,7 @@ index 5d63dcc..2fc233b 100644
  			}
  		}
  	}
-@@ -658,6 +686,155 @@ void HeeschSolver<grid>::getClauses(
+@@ -658,6 +686,183 @@ void HeeschSolver<grid>::getClauses(
  	}
  }
  
@@ -164,6 +164,34 @@ index 5d63dcc..2fc233b 100644
 +		CMSat::lbool r = solv.solve(&assume);
 +		if (r == CMSat::l_True) {
 +			const std::vector<CMSat::lbool>& model = solv.get_model();
++			// Halo clauses alone do not exclude large holes in inner coronas.
++			// Check every inner prefix. Block the exact prefix assignment, not
++			// just its border, so a possible fill of that hole is not excluded.
++			bool inner_valid = true;
++			for (size_t k = 1; k < level_; ++k) {
++				HoleFinder<grid> finder {shape_};
++				for (const auto& ti : tiles_) {
++					for (auto v : ti.levelRange(0, k + 1)) {
++						if (model[v.second] == CMSat::l_True) {
++							finder.addCopy(ti.index_, ti.T_);
++							break;
++						}
++					}
++				}
++				std::vector<std::vector<tile_index>> holes;
++				if (finder.getHoles(holes)) {
++					std::vector<CMSat::Lit> exclude;
++					for (const auto& ti : tiles_) {
++						for (auto v : ti.levelRange(0, k + 1)) {
++							exclude.push_back(CMSat::Lit(v.second, model[v.second] == CMSat::l_True));
++						}
++					}
++					solv.add_clause(exclude);
++					inner_valid = false;
++					break;
++				}
++			}
++			if (!inner_valid) continue;
 +			// Which level is each used tile at?
 +			point_map<coord_t, int> occ;	// cell -> level of the tile covering it
 +			std::vector<std::pair<size_t, xform_t>> used;

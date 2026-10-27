@@ -1,0 +1,35 @@
+{
+  "repair_checked_fixed_20261027.jsonl": {
+    "run_id": "c5e2ab92dcbb44d6a01f729ae69617cc",
+    "statuses": {
+      "unsat": 6
+    },
+    "solve_seconds": 0.099,
+    "build_seconds": 0.267,
+    "sampled_peak_rss_mb": 0,
+    "complete": true,
+    "sha256": "7d066ca9497d6eea1f96d92f303076f1e18da4391cd31aa634ae75774f6d4a32"
+  },
+  "repair_checked_shifted_20261027.jsonl": {
+    "run_id": "1e1f97f8d24b4f24bc16dc1b52ef23fa",
+    "statuses": {
+      "unsat": 6
+    },
+    "solve_seconds": 1.257,
+    "build_seconds": 2.049,
+    "sampled_peak_rss_mb": 55.3,
+    "complete": true,
+    "sha256": "23b72d74fb5c0a66f1515020bf3a4a421b2e0c292cfd977b99d46d9d5dfdab93"
+  },
+  "repair_checked_two_rings_20261027.jsonl": {
+    "run_id": "e98125bca75042eeadefcadc2d00c4ab",
+    "statuses": {
+      "unsat": 6
+    },
+    "solve_seconds": 121.949,
+    "build_seconds": 11.581,
+    "sampled_peak_rss_mb": 613.2,
+    "complete": true,
+    "sha256": "b5a3744bd5671c10a4330089256c184b2025eb38a686802ca643493785e627dd"
+  }
+}

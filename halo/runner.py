@@ -269,10 +269,11 @@ def run_one(sat, line, maxlevel, timeout, mem_mb, workdir, hh=False):
     return rec
 
 
-DEFAULT_DEFECT = os.path.join(ROOT, "build", platform.system(), "heesch-sat-defect", "defect")
+DEFAULT_DEFECT = os.path.join(ROOT, "build", platform.system(), "heesch-sat-defect-v2", "defect")
 
 
-def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=64, binary=DEFAULT_DEFECT):
+def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=64,
+               binary=DEFAULT_DEFECT, include_patch=False):
     """How close a non-tiler with Heesch number hc comes to an (hc+1)-corona: the fewest
     cells next to an hc-patch that an (hc+1)-corona leaves uncovered (heesch-sat patched
     by scripts/setup_heesch_sat.sh; see third_party/heesch-sat/defect.cpp). Returns
@@ -282,6 +283,8 @@ def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=6
     grid = line.split()[0].rstrip("?")
     record = f"{grid} {' '.join(line.split()[1:])}\n~ {hc} {hh} 0\n"
     cmd = [binary, "-maxd", str(max_d), "-confl", str(confl)]
+    if include_patch:
+        cmd.append("-patch")
     start = time.monotonic()
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             text=True, close_fds=False)
@@ -333,10 +336,14 @@ def run_defect(line, hc, hh, timeout=120.0, mem_mb=6000.0, confl=500000, max_d=6
     except Exception:
         rec["defect_stop"] = "error"
         return rec
+    rec["defect_version"] = info.get("metric_version", 1)
     if info.get("defect", -1) >= 0:
-        rec.update({"defect": info["defect"], "ring": info["ring"], "defect_exact": bool(info.get("exact"))})
+        rec.update({"defect": info["defect"], "ring": info["ring"], "defect_exact": bool(info.get("exact")),
+                    "defect_version": info.get("metric_version", 1)})
+        if include_patch and "patch" in info:
+            rec["defect_patch"] = info["patch"]
     else:
-        rec["defect_stop"] = "over-maxd"
+        rec["defect_stop"] = "no-solution-found" if rec["defect_version"] >= 2 else "over-maxd"
     return rec
 
 

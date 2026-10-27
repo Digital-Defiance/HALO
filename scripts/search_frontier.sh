@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PYTHONPATH="${ANER_PYTHON:-/Volumes/Code/ANER/python}${PYTHONPATH:+:$PYTHONPATH}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+bash "$ROOT/scripts/setup_patch_repair.sh"
 PYTHON="${HALO_PYTHON:-$ROOT/.venv/bin/python}"
 if [ ! -x "$PYTHON" ]; then
   PYTHON="${HALO_PYTHON:-python3}"

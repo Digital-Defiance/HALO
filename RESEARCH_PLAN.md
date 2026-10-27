@@ -3,6 +3,13 @@
 2026-10-27. These are research priorities, not measured discovery-rate gains.
 The goal remains a connected, hole-free tile accepted under `SPEC.md` §1.
 
+**Implementation update (2026-10-27):** patch export and the inverse-repair
+prototype are implemented and tested. The first controlled pilot ran 18 models
+on two verified layouts; all were UNSAT within the tested bounds. Export also
+exposed an inner-hole bug in the old defect metric: 5/169 was invalid as a fifth
+corona near miss; the corrected measurement is 7/171. See `REPAIR_PILOT.md`.
+The next strategic work is the marked construction and compact realization.
+
 ## Execution order and checkpoints
 
 The immediate milestone is a certified Hc>=5 non-tiler. Work toward Hc>=6 and
@@ -47,8 +54,9 @@ Full first-corona enumeration, GPU growth simulation, new neural architectures
 and broader multidimensional experiments remain follow-ups, contingent on a
 specific bottleneck or a small pilot demonstrating useful ranking information.
 
-The next concrete deliverable is working, tested patch export and an
-inverse-repair prototype. Those tools are not yet implemented.
+The patch-export and inverse-repair deliverables above are now implemented.
+The execution list records the original experiment order; its initial pilot is
+complete. Construction synthesis remains to be implemented.
 
 ## What the overnight result supports
 
@@ -66,15 +74,15 @@ is a speculative scenario, not a waiting-time forecast or guarantee.
 ## First research experiment: inverse design from a partial fifth corona
 
 Instead of mutating a tile and then discovering its coronas, solve for tile
-occupancy and a surrounding patch together. This is an unimplemented hypothesis.
+occupancy and a surrounding patch together. The first bounded prototype is implemented.
 It could find coordinated edits that random one-cell mutations almost never
 make, while using a concrete failure of a known high-Hc patch as guidance.
 
-The native diagnostic of our 21-cell Hc=4 tile found an exact minimum defect of
-**5 uncovered cells out of a 169-cell required ring**, with the current defect
-encoding. It took 48.804 seconds and peaked at 4,441.3 MB RSS. The append-only
-record is `results/hex21_h4_defect_20261027.jsonl`. Its Hc remains exactly 4.
-This is a candidate fifth-corona layout to inspect, not a witness for Hc=5.
+The first native diagnostic reported 5/169, but exported geometry revealed a
+hole in the fourth ring. That legacy result is preserved in
+`results/hex21_h4_defect_20261027.jsonl` and must not be used as a valid near miss.
+The corrected version-2 result is **7/171**, with all four inner rings checked
+independently; see `results/repair_layouts_checked_20261027.jsonl`. Hc remains 4.
 
 Implement in this order:
 

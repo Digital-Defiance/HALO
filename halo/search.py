@@ -107,7 +107,9 @@ def defect_frac(rec):
     """Share of the cells next to an hc-patch that the best (hc+1)-corona found leaves
     uncovered (lower is closer to Heesch number hc+1); 1.0 when not measured."""
     d, r = rec.get("defect"), rec.get("ring")
-    return d / r if d is not None and r else 1.0
+    # Version 1 did not exclude large holes in inner coronas. Preserve its
+    # archive values, but do not use them as evidence of a near-complete ring.
+    return d / r if rec.get("defect_version", 1) >= 2 and d is not None and r else 1.0
 
 
 def main():
@@ -850,7 +852,7 @@ def main():
                         recent[row["generator"]] = collections.deque(maxlen=args.guard_checks)
                     recent[row["generator"]].append(good)
                 f = fitness(row)
-                if (row.get("defect") is not None and row.get("ring")
+                if (row.get("defect_version", 1) >= 2 and row.get("defect") is not None and row.get("ring")
                         and row["cells"] >= (PREFER_MIN_CELLS or 0)):
                     frac = row["defect"] / row["ring"]
                     if frac < closest.get(row["hc"], 2.0):
