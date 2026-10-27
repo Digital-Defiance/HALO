@@ -3,6 +3,53 @@
 2026-10-27. These are research priorities, not measured discovery-rate gains.
 The goal remains a connected, hole-free tile accepted under `SPEC.md` §1.
 
+## Execution order and checkpoints
+
+The immediate milestone is a certified Hc>=5 non-tiler. Work toward Hc>=6 and
+Hc>=7 follows from a working method; no discovery date is predicted.
+
+1. **Build the patch exporter and independent diagnostic checks.** Export a
+   partial fifth-corona layout, all copy transforms and uncovered coordinates.
+   Independently recompute the gap count, overlaps, corona contacts and inner
+   patch geometry. Check the 21-cell parent's recorded 5/169 result when the
+   same optimum/layout is reproduced; equal minimum gap counts can have
+   different ring sizes. Gate: a trustworthy machine-readable repair input,
+   plus positive and negative regression fixtures. Existing scalar defect
+   output alone is insufficient.
+2. **Build and run one bounded inverse-repair pilot.** Start with fixed
+   placement layouts and shared shape-cell variables. Try edit budgets of
+   2, 4 and 6 cells, beginning with one layout and widening to at most four.
+   Proposed first compute budget: one hour, one large solver at a time, up to
+   20 GB per solver, retaining the system headroom safeguard. This is an
+   experiment budget, not an implementation-time estimate. Check every proposed
+   tile with the normal classifier and independently verify any claimed corona
+   improvement. Record genuine UNSAT results separately from resource caps.
+   Gate: validated distinct proposals or a precise account of which bounded
+   layout/edit spaces failed. No Hc=5 in this pilot does not refute the method.
+3. **Evaluate once before widening the search.** Compare checker cost and new
+   Hc>=4/5 discoveries with the existing sweep control. If fixed layouts block
+   repair, choose another partial patch or allow limited placement changes;
+   do not just increase CPU time on an unchanged failed model. Reserve enough
+   exploration to detect different shape families. The two-edit sweep remains
+   a bounded background control; no running job should be stopped merely to
+   write or test the exporter.
+4. **Develop a construction after this first implementation cycle.** Extract
+   Mann's marked hexapillar rules and reproduce the known behaviour. Calculate
+   the exact cell/span budget of a proposed unmarked realization before
+   expensive classification. Combine a verified weak imbalance/density
+   obstruction with compact boundary matching codes and the inverse solver.
+   Gate: retain intended fits, exclude unintended escape fits, satisfy shape
+   limits and produce complete verified early coronas. A successful marked
+   construction alone does not meet the unmarked-tile goal.
+
+Keep ANER and the existing scoring backend as they are during the first pilot.
+Full first-corona enumeration, GPU growth simulation, new neural architectures
+and broader multidimensional experiments remain follow-ups, contingent on a
+specific bottleneck or a small pilot demonstrating useful ranking information.
+
+The next concrete deliverable is working, tested patch export and an
+inverse-repair prototype. Those tools are not yet implemented.
+
 ## What the overnight result supports
 
 The overnight run spent 1.49 million of its 2.25 million checks on random
