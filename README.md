@@ -18,6 +18,7 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `STATUS.md` | Living handoff log: what's done, running, next. **Read this first when resuming.** |
 | `PIPELINE_REVIEW.md` | Pipeline measurements, fixes, current allocation, and remaining strategy gaps |
 | `RESEARCH_PLAN.md` | Next research experiments: inverse patch repair, construction feasibility and targeted sweeps |
+| `UNCONVENTIONAL_RESEARCH.md` | Cross-domain hypotheses, primary sources and concrete experiment gates |
 | `refs/README.md` | Obtained construction papers, public sources and local PDF checksum |
 | `scripts/search_frontier.sh` | Next native frontier run; resume after the current run finishes |
 | `CLAUDE.md` | Short orientation for coding agents |

@@ -46,6 +46,14 @@ not a theorem about all Hc=4 polyhexes. Two-edit improvements exist in the contr
 
 ## Unconventional research portfolio (Codex, ongoing)
 
+The expanded source review and staged combinations are in
+`UNCONVENTIONAL_RESEARCH.md`: relative-pose graphs from robotics, parity and
+incompatible-flow obstructions, interrupted tiling hierarchies, automatic
+geometric gadgets, polyLaves substrates and boundary tensor calculations.
+These are proposed transfers, not established Heesch constructions. The first
+implementation gate is an inner-arrangement control; mechanism/compiler work
+is a separate route to a genuinely new design family.
+
 Keep the active sweep and the other AI's v2 remeasure running. In addition to
 those empirical tracks, pursue controlled experiments on these levers:
 
