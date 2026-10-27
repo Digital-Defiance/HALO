@@ -56,7 +56,10 @@ specific bottleneck or a small pilot demonstrating useful ranking information.
 
 The patch-export and inverse-repair deliverables above are now implemented.
 The execution list records the original experiment order; its initial pilot is
-complete. Construction synthesis remains to be implemented.
+complete. Step 4's first part is done: Mann's rules are extracted and every
+direct polyhex/polyiamond realization was classified (`CONSTRUCTION_PILOT.md`).
+None fits the limits and keeps the mechanism. Compact marking synthesis remains
+open.
 
 ## What the overnight result supports
 
@@ -126,7 +129,10 @@ before optimizing a realization. Determine the exact grid cell count and
 coordinate span before an expensive SAT run. Treat preserving intended fits,
 eliminating unintended fits, and staying inside 200 cells/span 29 as separate
 acceptance gates. The handoff's proposed 130–170-cell realization has not been
-built or validated. The H=5 and H=6 papers give mechanisms to learn from, not
+built or validated. Update 2026-10-27: the direct realizations were built and
+fail (`CONSTRUCTION_PILOT.md`): an exact copy needs 215 cells and span 86;
+compact hex-grid macro-hexagons sit on a chiral lattice, so reflected copies
+cannot mate and the end-nicked pillar has Hc=0; one-cell features tile. The H=5 and H=6 papers give mechanisms to learn from, not
 a construction of Hc=7 or an automatic conversion to a qualifying polyform.
 
 ## Immediate background experiment

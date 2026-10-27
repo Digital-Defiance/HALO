@@ -1,6 +1,13 @@
 # HALO status
 
-Last updated: 2026-10-27 (Codex: inverse-repair prototype and pilot completed; inner-hole defect bug fixed). Current phase: **Best certified Hc is still 4. Eighteen controlled inverse-repair models were UNSAT within their tested bounds. The old 5/169 near miss had a holed inner ring; corrected score 7/171. Next: marked construction and compact realization.**
+Last updated: 2026-10-27 (Codex: inverse-repair prototype and pilot completed; inner-hole defect bug fixed. Claude: hexapillar construction pilot, negative). Current phase: **Best certified Hc is still 4. Eighteen controlled inverse-repair models were UNSAT within their tested bounds. The old 5/169 near miss had a holed inner ring; corrected score 7/171. Direct realizations of Mann's hexapillar fail inside the limits (`CONSTRUCTION_PILOT.md`). Next: two-edit sweep around certified Hc=4 shapes; compact marking synthesis is open research.**
+
+## Construction handoff (2026-10-27, Claude): Mann hexapillar realizations
+
+- **Done:** `halo/hexapillar.py` builds Mann's marked n-hexapillar (upper edges nicked, lower edges bumped, first end flat, last end nicked: 2n+1 nicks vs 2n bumps) as a polyhex from k-cell-radius macro-hexagons, and as a polyiamond from side-1 hexagons. `CONSTRUCTION_PILOT.md` has the rules, the table and the diagnosis. Four new unit tests (`tests/test_hexapillar.py`) check the macro-tiling, marking counts and bump/nick mating.
+- **Results:** polyhex k=2 (13–34 cells, n=2–5) and polyiamond side 1 (n=2–5, 11–29 triangles; n=5 is over the span limit) all tile isohedrally. Polyhex k=3 (n=2–4, up to 75 cells) and k=4 (n=2) give Hc=0. The k≥2 macro-lattice is chiral, so reflected copies cannot meet edge to edge, and Mann's coronas need them. No D6-symmetric connected hole-free fundamental domain of 5A2, 7A2 or 11A2 exists up to radius 9 (`scripts/construction_d6_domains.py`). Every one-cell edit of the k=2 4- and 5-pillars (753 and 1,121 shapes) reaches at most Hc=1 (`scripts/construction_hexapillar_sweep.py`). The exact side-3 polyiamond copy is 215 cells and span 86. All rows: `results/construction_hexapillar_20261027.jsonl`.
+- **Meaning:** the limits rule out direct copies of the hexapillar; this is not an impossibility proof for other compact markings. Classifications ran in the cloud copy at maxlevel 7.
+- **Next:** the two-edit sweep is the empirical lead. A new construction would need bump/nick features designed to be mirror-compatible on a small achiral substrate, then gated with `halo/patch_repair.py`.
 
 ## Implementation handoff (2026-10-27): repair pilot and defect metric v2
 
