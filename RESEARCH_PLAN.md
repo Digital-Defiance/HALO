@@ -8,7 +8,53 @@ prototype are implemented and tested. The first controlled pilot ran 18 models
 on two verified layouts; all were UNSAT within the tested bounds. Export also
 exposed an inner-hole bug in the old defect metric: 5/169 was invalid as a fifth
 corona near miss; the corrected measurement is 7/171. See `REPAIR_PILOT.md`.
-The next strategic work is the marked construction and compact realization.
+The marked construction was then tried directly and failed inside the limits;
+see the handoff below and `CONSTRUCTION_PILOT.md`.
+
+## Handoff (2026-10-27, 11:50 PT): where things stand and what to do next
+
+**State.** Best certified result is Hc=4: the 21-cell polyhex in
+`shapes/hex21_h4.witness`, v2 defect 7/171 (fifth corona not close). This ties
+the known polyhex class and is not a record. No Hc>=5 exists yet. Nothing is
+running on the Mac; the last production search was overnight run a3d2f477
+(2.25 M checks, summary in `STATUS.md`).
+
+**Finished, with negative results that should not be repeated unchanged:**
+- Inverse repair (`REPAIR_PILOT.md`): 18 models on two layouts, all UNSAT.
+- Construction (`CONSTRUCTION_PILOT.md`): Mann's hexapillar copied exactly
+  needs 215 cells and span 86. Compact polyhex/polyiamond versions either tile
+  or have Hc=0 (the hex-grid macro-lattice is chiral, so mirrored copies cannot
+  mate). One-cell edits of the 27- and 34-cell versions reach at most Hc=1.
+
+**Next, in order:**
+1. **Two-edit sweep around Hc=4 shapes.** This is the strongest empirical lead and
+   costs nothing to start: `./scripts/search_frontier.sh --sweep2-max-defect 0.03`.
+   Every Hc=4 shape is a sweep2 parent regardless of defect; Hc=3 parents
+   qualify only with a v2 defect at or below the threshold (legacy v1 defect
+   fields are ignored, so few Hc=3 shapes qualify until remeasured). The
+   21-cell parent's two-edit ball is about 41k shapes. The run prints
+   ETA/backlog lines.
+2. **Remeasure v2 defects** for every archived Hc=4 shape and the best Hc=3
+   shapes, so near-miss ranking and the sweep2 threshold use the corrected
+   metric (`halo/runner.py run_defect`; records carry `defect_version: 2`).
+3. **New repair inputs, not bigger budgets.** Any new Hc=4 shape: measure v2
+   defect, export its patch, run `halo/patch_repair.py` at 2/4/6 edits. For the
+   existing parents, only try other optimal layouts or limited placement
+   changes (step 3 below).
+4. **Construction stays open research, low priority.** A compact route would
+   need new bump/nick features that fit mirrored copies on a small achiral
+   substrate, gated with `patch_repair.py` and the classifier. Direct copies of
+   Mann or Bašić do not fit 200 cells / span 29.
+
+**Housekeeping for the next agent.**
+- `results/search_hex_01.jsonl` has 2 changed lines from 06:48 today that no
+  agent has claimed; leave them uncommitted unless the owner says otherwise.
+- Models and the search archive are in Git LFS; the owner pushes from macOS.
+  Commit as `Jessica Mulein <jessica@digitaldefiance.org>`.
+- Do not stop a running search to do other work; keep ANER and the scoring
+  backend unchanged. Delete permission on the repo exists only so git can
+  clear lock files; never delete project files.
+- Verify file hashes after copying files into the repo from another machine.
 
 ## Execution order and checkpoints
 
