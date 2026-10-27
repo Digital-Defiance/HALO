@@ -1,0 +1,193 @@
+{
+  "date": "2026-10-27",
+  "experiment": "inverse pose and conserved-charge mechanism controls",
+  "artifacts": {
+    "results/pose_reconstruction_control_20261027.jsonl": {
+      "bytes": 13442,
+      "sha256": "0ea0dcca0a2da43c5cde91be25c864cd4d1bbfba6998b541cf9d0cf4844601bf",
+      "rows": 4,
+      "statuses": {
+        "verified": 2,
+        "timeout": 2
+      }
+    },
+    "results/marked_charge_cap1_20261027.jsonl": {
+      "bytes": 14342,
+      "sha256": "f7d3b077a8457313763092ccb0627827585cfa84c5bbae76aa0f235034ede72a",
+      "rows": 13,
+      "statuses": {
+        "classified": 13
+      },
+      "hc_histogram": {
+        "3": 1,
+        "1": 5,
+        "0": 7
+      }
+    },
+    "results/marked_charge_cap2_20261027.jsonl": {
+      "bytes": 114102,
+      "sha256": "bab8991abc2646d4e807a83847f7824aa363f4af718990641e157b4e10a33ec7",
+      "rows": 140,
+      "statuses": {
+        "classified": 140
+      },
+      "hc_histogram": {
+        "0": 139,
+        "1": 1
+      }
+    },
+    "results/marked_pillar_control_20261027.jsonl": {
+      "bytes": 39496,
+      "sha256": "dda907d37f1eaf73853178bf6104474c42a1022d9065806b5dd5425a9ad1c713",
+      "rows": 5,
+      "statuses": {
+        "classified-in-marked-grid": 4,
+        "memout": 1
+      },
+      "hc_histogram": {
+        "4": 2,
+        "None": 1,
+        "5": 1,
+        "3": 1
+      }
+    },
+    "results/marked_compact_screen_20261027.jsonl": {
+      "bytes": 157283,
+      "sha256": "92bd9af06d614aa0028bc73ea0696c9833f8d363c8880a2aae982c55e0e580a5",
+      "rows": 117,
+      "statuses": {
+        "classified-in-marked-grid": 117
+      },
+      "hc_histogram": {
+        "0": 105,
+        "1": 12
+      }
+    },
+    "results/marked_swap_screen_20261027.jsonl": {
+      "bytes": 114829,
+      "sha256": "08edece3eaffb6bfac56fc897c389241e24776a4f60ecefcaf6d21f942e4710f",
+      "rows": 84,
+      "statuses": {
+        "classified-in-marked-grid": 84
+      },
+      "hc_histogram": {
+        "0": 84
+      }
+    }
+  },
+  "verified_saved_patches": 44,
+  "pose_controls": [
+    {
+      "run_id": "c890d650d21d47499467ced9773fb919",
+      "weighted": true,
+      "copies": 6,
+      "target_level": 1,
+      "status": "verified",
+      "seconds": 0.2192,
+      "peak_rss_mb": 40.9,
+      "verification_message": "verified: hole-free Heesch number >= 1 (6 copies, grid H)"
+    },
+    {
+      "run_id": "f2a1c1b3e1f34cebb0a39d2077d4f335",
+      "weighted": true,
+      "copies": 62,
+      "target_level": 4,
+      "status": "timeout",
+      "seconds": 15.0277,
+      "peak_rss_mb": 594.7,
+      "verification_message": null
+    },
+    {
+      "run_id": "8b8c833505894c088f0562b3c2c0f6b6",
+      "weighted": true,
+      "copies": 62,
+      "target_level": 4,
+      "status": "verified",
+      "seconds": 11.2897,
+      "peak_rss_mb": 543.6,
+      "verification_message": "verified: hole-free Heesch number >= 4 (62 copies, grid H)"
+    },
+    {
+      "run_id": "e234862d5dfa477487f256bd467ba453",
+      "weighted": false,
+      "copies": 62,
+      "target_level": 4,
+      "status": "timeout",
+      "seconds": 15.0503,
+      "peak_rss_mb": 616.7,
+      "verification_message": null
+    }
+  ],
+  "marked_pillar_controls": [
+    {
+      "n": 2,
+      "status": "classified-in-marked-grid",
+      "hc": 4,
+      "lower_bound": 4,
+      "seconds": 0.8845,
+      "peak_rss_mb": 181.7
+    },
+    {
+      "n": 3,
+      "status": "classified-in-marked-grid",
+      "hc": 4,
+      "lower_bound": 4,
+      "seconds": 1.7853,
+      "peak_rss_mb": 674.1
+    },
+    {
+      "n": 4,
+      "status": "memout",
+      "hc": null,
+      "lower_bound": 5,
+      "seconds": 6.6592,
+      "peak_rss_mb": 1009.1
+    },
+    {
+      "n": 4,
+      "status": "classified-in-marked-grid",
+      "hc": 5,
+      "lower_bound": 5,
+      "seconds": 7.58,
+      "peak_rss_mb": 1014.6
+    },
+    {
+      "n": 1,
+      "status": "classified-in-marked-grid",
+      "hc": 3,
+      "lower_bound": 3,
+      "seconds": 0.0571,
+      "peak_rss_mb": 0.0
+    }
+  ],
+  "source_snapshot_sha256": {
+    "halo/pose_synthesis.py": "f4b7559fdcda490ed1236b9230b358c370f562725589a0612ad8cf05fa31bad6",
+    "halo/marked_charge.py": "56c406b0035aa610d1cc8a16d0d44ed485ca16bd48c59e56e4493ddac90e8d4e",
+    "halo/marked_polyform.py": "e1d900449ed507254ed0cf84c0343f13f6679caca0cafc6507af2b3fd536a06a",
+    "halo/marked_screen.py": "73e13e8a4662bfe6c8af3135a7c3740d5261ea94bc9813fd9da5fb9c0a5684d0",
+    "scripts/setup_marked_polyforms.sh": "eed5a47ffc3d67702507ab8d5e5279c5880220480cdd837f20231841700a13aa",
+    "third_party/heesch-sat/marked.cpp": "b58886c2b160de80118bd6298203d516078d27a86efce9296c19411c7afe5917",
+    "third_party/heesch-sat/halo_marked_methods.h": "934ea28a9bbc29f713a89d56b150742c08cdd4d7d1350cf5456a6f69447665c8"
+  },
+  "marked_binary_sha256": "b91e6b5ebe11c3858b1a4cda0ee221360db86c802f9af8ff416d6496182622c1",
+  "upstream_heesch_header_sha256": "23794ca41bbafa6568d4031af6cf03400616773d07b7d2aa903fb96d5a5bdf8f",
+  "environment": {
+    "python": "3.12.11 (main, Aug 18 2025, 19:02:39) [Clang 20.1.4 ]",
+    "z3": "5.3.1",
+    "host": "native macOS; 64 GiB owner machine; existing job not stopped"
+  },
+  "tests": {
+    "command": ".venv/bin/python -m unittest discover -s tests -v",
+    "run": 78,
+    "passed": 77,
+    "skipped": 1
+  },
+  "qualifications": [
+    "No new qualifying unmarked Hc>=5 tile.",
+    "Free-pose reconstruction receives a fixed tile and reference contact graph/counts; unweighted large case unresolved.",
+    "Marked Hc=4/5 results reproduce known constructions in the edge-matched lattice model. Geometry compilation remains open.",
+    "The proposed cap2/net1 one-hex seven-ring family fails; label reweighting gives a stronger upper bound <=3.",
+    "Native code disables geometry-only tiling shortcuts only inside the isolated marked experiment. Production unmarked checks still use -isohedral.",
+    "Final source hashes describe the published snapshot; intermediate development revisions remain identified only by their recorded hashes. All result rows retained."
+  ]
+}

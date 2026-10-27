@@ -19,6 +19,7 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `PIPELINE_REVIEW.md` | Pipeline measurements, fixes, current allocation, and remaining strategy gaps |
 | `RESEARCH_PLAN.md` | Next research experiments: inverse patch repair, construction feasibility and targeted sweeps |
 | `UNCONVENTIONAL_RESEARCH.md` | Cross-domain hypotheses, primary sources and concrete experiment gates |
+| `SCORE_DESIGN_PILOT.md` | Implemented free-pose and charge-design controls, marked Hc=4/5 validation and next gates |
 | `refs/README.md` | Obtained construction papers, public sources and local PDF checksum |
 | `scripts/search_frontier.sh` | Next native frontier run; resume after the current run finishes |
 | `CLAUDE.md` | Short orientation for coding agents |
@@ -31,6 +32,10 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `halo/gen_report.py` | Generator and per-parent sweep yield from read-only log snapshots |
 | `halo/template_synthesis.py` | Experimental transfer of a supplied corona template to a nearby tile |
 | `halo/outer_synthesis.py` | Experimental tile synthesis and independent construction of a withheld outer ring |
+| `halo/pose_synthesis.py` | Free integer poses constrained by a supplied contact graph; Z3 CLI |
+| `halo/marked_charge.py` | Exact marked-hex charge bounds and bounded symbolic rule experiments |
+| `halo/marked_polyform.py` | Capped marked-polyhex solver controls with independently checked witnesses |
+| `halo/marked_screen.py` | Structured marked-body and charge-preserving rule screens |
 | `build/<OS>/` | Generated; the cloned checker lives here (separate per OS, so Linux and macOS builds never mix) |
 
 ## Quick start

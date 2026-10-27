@@ -46,6 +46,16 @@ not a theorem about all Hc=4 polyhexes. Two-edit improvements exist in the contr
 
 ## Unconventional research portfolio (Codex, ongoing)
 
+**Implemented checkpoint:** `SCORE_DESIGN_PILOT.md` records the new relative-pose
+control, tested charge formula/obstruction, and marked-polyhex backend. Free
+poses recover the known four-ring layout conditional on its contact graph and
+counts; the marked backend reproduces known Hc=4/5 pillars. The first compact
+and marking-swap screens fail. Immediate research gate: jointly synthesize
+markings and patches while enforcing a conserved nonzero charge, recover known
+controls without supplying markings, then seek six/seven-ring marked witnesses
+and compact geometric compilation. The single-hex charge-seven family is ruled
+out; do not enlarge that unchanged search.
+
 The expanded source review and staged combinations are in
 `UNCONVENTIONAL_RESEARCH.md`: relative-pose graphs from robotics, parity and
 incompatible-flow obstructions, interrupted tiling hierarchies, automatic

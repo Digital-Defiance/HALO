@@ -154,6 +154,13 @@ priority than the arrangement and geometric-compiler bottlenecks.
 
 ## Concrete work order
 
+**Implementation checkpoint (2026-10-27):** see `SCORE_DESIGN_PILOT.md`.
+Conditional free-pose reconstruction and known marked Hc=4/5 controls now pass.
+The charge model gives a small exact Hc=3 inverse-design control and a stronger
+obstruction to its proposed one-hex seven-ring family. Completed compact-polar
+and single-mark-swap screens fail. Next: synthesize rules with their patches,
+then establish geometric compilation and less oracle-dependent reconstruction.
+
 1. **Save the synthesis avenue:** a bounded relative-pose/inner-arrangement
    control, with no supplied absolute inner layout. Treat a fixed contact graph
    as another explicit restriction, and allow changes if controls demand them.
