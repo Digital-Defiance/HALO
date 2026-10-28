@@ -1,6 +1,14 @@
 # HALO status
 
-Last updated: 2026-10-27 (Codex native: free-pose reconstruction and marked mechanism controls). Current phase: **Best qualifying unmarked Hc is still 4. Free-pose reconstruction now recovers the known four-ring patch from a contact graph; an isolated marked solver reproduces known Hc=4/5 pillars. No qualifying unmarked Hc>=5. Next: jointly synthesize markings and patches, and compile compact geometry that preserves their fits. Existing search/scoring jobs are untouched.**
+Last updated: 2026-10-27 (Codex native: joint rule/placement synthesis). Current phase: **Best qualifying unmarked Hc is still 4. Joint synthesis now recovers marked three/four-ring controls with no markings supplied, and staged synthesis recovers the known marked Hc=5 rule. No six/seven witness or qualifying unmarked Hc>=5. Next: couple rule design to compact realizability and test richer obstructions. Existing search/scoring jobs are untouched.**
+
+## Native joint-rule handoff (2026-10-27)
+
+- **Done:** `halo/joint_marked.py` and the isolated `setup_joint_marked.sh` backend choose shared ternary labels and all corona placements on a fixed body, with net charge -1. All default labels are unknown; no reference layout/contact graph is supplied. Independent geometry/label/charge checks accept one-hex three-ring and two-hex four-ring controls. A four-hex three-ring synthesis (0.7105 s) invents Mann's known rule; the separate fixed-rule checker proves exact marked Hc=5 (7.3977 s, sampled 1,010.9 MB). This is symbolic control recovery, not an unmarked realization.
+- **Done, feedback:** `halo/joint_rule_search.py` reuses completed checks and excludes rules whose allowed relative fits are subsets of a proved-below-target rule. New fits are audited independently. Resumption checks input/binary digests and positive witnesses. Capped candidates remain deferred and cannot support a whole-family nonexistence claim.
+- **Bounded results:** direct five-ring joint synthesis capped at 30 s. Six-ring alternatives capped at 5/15 s. Seven-ring staged trials checked 26 additional classes (24 Hc=1, two Hc=2), then capped. Six compact four-hex bodies: one has no three-ring rule in the tested ternary/net-1 family; five remain unresolved. Do not describe caps as UNSAT or repeat these unchanged models with larger budgets. Details: `JOINT_RULE_PILOT.md`.
+- **Validation:** 90 tests, 89 passed and one existing opt-in skip; all saved positive pilot patches rechecked independently. Raw append-only logs and `benchmarks/2026-10-27/joint_rule_summary.json` retain witnesses, caps, inputs and digests.
+- **Running / next / blocked:** production search and the other AI's remeasure/retry were neither stopped nor modified. Their changing/unclaimed outputs remain uncommitted. Next gates: compact realizability during body/rule selection, multiple-label or delayed parity/hierarchy mechanisms, and a compact achiral geometric compiler. No access blocker; mathematical effectiveness beyond known controls remains open. ANER and production binaries were unchanged.
 
 ## Native inverse-design update (2026-10-27)
 

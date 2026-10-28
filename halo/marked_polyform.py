@@ -55,6 +55,26 @@ def mann_pillar(n):
     return cells,[[*edge,q] for edge,q in sorted(marks.items())]
 
 
+def legal_relative_fits(cells,marks):
+    """All legal two-copy marked fits, independently of the native backend."""
+    import pose_synthesis
+    cells=[tuple(p) for p in cells]
+    labels=boundary_marks(cells,marks)
+    accepted=set()
+    for transforms in pose_synthesis.legal_contacts('H',cells).values():
+        for T in transforms:
+            a,b,tx,d,e,ty=T
+            image={repair.transform(T,p) for p in cells}
+            other={(*repair.transform(T,(x,y)),a*dx+b*dy,d*dx+e*dy):q
+                   for (x,y,dx,dy),q in labels.items()}
+            valid=True
+            for (x,y,dx,dy),q in labels.items():
+                if (x+dx,y+dy) in image and q+other[x+dx,y+dy,-dx,-dy]!=0:
+                    valid=False;break
+            if valid:accepted.add(T)
+    return accepted
+
+
 def verify_patch(cells,marks,placements,level):
     ok,message=verify.verify(repair.witness_text('H',cells,placements,level))
     if not ok:
@@ -86,6 +106,14 @@ def verify_patch(cells,marks,placements,level):
             'net_charge_per_tile':sum(labels.values())}
 
 
+def solver_input(cells,marks):
+    """Stable native input, also used to bind resumed checks to their rules."""
+    labels=boundary_marks(cells,marks)
+    return (str(len(cells))+'\n'+'\n'.join(f'{x} {y}' for x,y in cells)+'\n'
+            +str(len(labels))+'\n'+'\n'.join(' '.join(map(str,(*edge,q)))
+            for edge,q in sorted(labels.items()))+'\n')
+
+
 def run(cells,marks,maxlevel=7,seconds=20,mem_mb=1000,reserve_mb=8000,
         conflicts=2000000,binary=DEFAULT_BINARY):
     if (not 1<=maxlevel<=12 or conflicts<1
@@ -95,10 +123,7 @@ def run(cells,marks,maxlevel=7,seconds=20,mem_mb=1000,reserve_mb=8000,
     ok,problems,_=shape.check_cells('H',cells)
     if not ok or any('stricter' in p for p in problems):
         raise ValueError('invalid body: '+'; '.join(problems))
-    labels=boundary_marks(cells,marks)
-    payload=(str(len(cells))+'\n'+'\n'.join(f'{x} {y}' for x,y in cells)+'\n'
-             +str(len(labels))+'\n'+'\n'.join(' '.join(map(str,(*edge,q)))
-             for edge,q in sorted(labels.items()))+'\n')
+    payload=solver_input(cells,marks)
     budget=runner.MemoryBudget(mem_mb,reserve_mb)
     if not budget.may_start():
         return {'status':'memory-pressure','hc':None,'lower_bound':0,'levels':[]}

@@ -5,6 +5,11 @@ implements a free-pose reconstruction control, tests a charge-based inverse
 design idea, and validates an isolated marked-polyhex solver against known
 Hc=4/5 constructions. Existing search/scoring jobs and ANER remain unchanged.
 
+**Follow-up implemented:** `JOINT_RULE_PILOT.md` now records joint unknown-label
+and free-placement synthesis. It passes unseeded marked three/four-ring controls
+and recovers known marked Hc=5 by shallow synthesis plus forward checking. The
+bounded six/seven pilots remain unresolved; no unmarked improvement is claimed.
+
 ## What “solve for Heesch 7” means
 
 Let C(S,P,k) say that P is a valid k-corona patch of tile S. Then

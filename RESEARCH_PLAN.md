@@ -46,6 +46,16 @@ not a theorem about all Hc=4 polyhexes. Two-edit improvements exist in the contr
 
 ## Unconventional research portfolio (Codex, ongoing)
 
+**Joint-synthesis checkpoint:** `JOINT_RULE_PILOT.md` implements the next gate
+below. Shared ternary labels and corona placements are now synthesized together
+on a fixed body without marking/layout templates. Three/four-ring controls pass;
+a three-ring rule invention followed by fixed-rule checking recovers known
+marked Hc=5. Six/seven attempts remain unresolved. Sound relative-fit feedback
+and checked resumption are implemented. Next couple body choice to compact
+geometric realizability and test richer label/parity/hierarchy mechanisms;
+longer unchanged capped searches are not the next priority. This is no new
+qualifying unmarked tile, and no accelerator change is needed first.
+
 **Implemented checkpoint:** `SCORE_DESIGN_PILOT.md` records the new relative-pose
 control, tested charge formula/obstruction, and marked-polyhex backend. Free
 poses recover the known four-ring layout conditional on its contact graph and

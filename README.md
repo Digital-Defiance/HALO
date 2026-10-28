@@ -20,6 +20,7 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `RESEARCH_PLAN.md` | Next research experiments: inverse patch repair, construction feasibility and targeted sweeps |
 | `UNCONVENTIONAL_RESEARCH.md` | Cross-domain hypotheses, primary sources and concrete experiment gates |
 | `SCORE_DESIGN_PILOT.md` | Implemented free-pose and charge-design controls, marked Hc=4/5 validation and next gates |
+| `JOINT_RULE_PILOT.md` | Joint unknown markings/placements, unseeded marked Hc=3/4/5 controls and bounded six/seven attempts |
 | `refs/README.md` | Obtained construction papers, public sources and local PDF checksum |
 | `scripts/search_frontier.sh` | Next native frontier run; resume after the current run finishes |
 | `CLAUDE.md` | Short orientation for coding agents |
@@ -36,6 +37,8 @@ Epoch AI lists this as an open problem ("A shape with Heesch number 7"), rated "
 | `halo/marked_charge.py` | Exact marked-hex charge bounds and bounded symbolic rule experiments |
 | `halo/marked_polyform.py` | Capped marked-polyhex solver controls with independently checked witnesses |
 | `halo/marked_screen.py` | Structured marked-body and charge-preserving rule screens |
+| `halo/joint_marked.py` | Joint ternary rule and corona synthesis on a fixed polyhex body |
+| `halo/joint_rule_search.py` | Staged deeper checks with sound relative-fit feedback and checked resumption |
 | `build/<OS>/` | Generated; the cloned checker lives here (separate per OS, so Linux and macOS builds never mix) |
 
 ## Quick start
